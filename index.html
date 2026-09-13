@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="러닝 코칭" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>러닝 코칭</title>
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <div class="eyebrow">2026.10.25 하프마라톤</div>
+      <h1>러닝 코칭</h1>
+      <div class="sub">목표 1:50 · 5:13/km</div>
+    </div>
+    <div class="d-day" id="dDay">D-</div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="today">오늘</button>
+    <button class="tab" data-tab="log">훈련 기록</button>
+    <button class="tab" data-tab="settings">설정</button>
+  </nav>
+
+  <main>
+    <section id="today" class="panel active">
+      <div class="card">
+        <div class="card-title">최근 훈련 부하</div>
+        <div class="metric-grid">
+          <div><span>최근 7일</span><strong id="last7">0.0 km</strong></div>
+          <div><span>최근 28일</span><strong id="last28">0.0 km</strong></div>
+          <div><span>전주 대비</span><strong id="ramp">-</strong></div>
+          <div><span>최근 롱런</span><strong id="latestLong">-</strong></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row between">
+          <div class="card-title">현재 날씨 · 청도 이서면 인근</div>
+          <button class="small-btn" id="refreshWeather">새로고침</button>
+        </div>
+        <div id="weatherLine" class="weather-line">날씨 불러오는 중…</div>
+      </div>
+
+      <div class="card plan-card">
+        <div class="eyebrow">오늘 할 일</div>
+        <h2 id="planTitle">계산 중…</h2>
+        <div class="plan-grid">
+          <div><span>거리</span><strong id="planDistance">-</strong></div>
+          <div><span>페이스</span><strong id="planPace">-</strong></div>
+          <div><span>심박</span><strong id="planHr">-</strong></div>
+          <div><span>워밍업</span><strong id="planWu">-</strong></div>
+          <div><span>쿨다운</span><strong id="planCd">-</strong></div>
+        </div>
+        <div class="divider"></div>
+        <div class="why-title">왜 이렇게 조정했나</div>
+        <p id="planAdjustment"></p>
+        <p id="planNote" class="muted"></p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">오늘 컨디션</div>
+        <div class="form-grid">
+          <label>피로 <span id="fatigueVal">2</span>/10
+            <input id="fatigue" type="range" min="0" max="10" value="2">
+          </label>
+          <label>근육통 <span id="sorenessVal">2</span>/10
+            <input id="soreness" type="range" min="0" max="10" value="2">
+          </label>
+          <label>통증 <span id="painVal">0</span>/10
+            <input id="pain" type="range" min="0" max="10" value="0">
+          </label>
+          <label class="checkbox-row"><input id="sleptWell" type="checkbox" checked> 잠을 잘 잤음</label>
+        </div>
+        <button class="primary" id="recalc">훈련 다시 계산</button>
+      </div>
+    </section>
+
+    <section id="log" class="panel">
+      <div class="row between section-head">
+        <div>
+          <h2>훈련 기록</h2>
+          <div class="muted" id="logSummary">최근 7일 0.0 km · 28일 0.0 km</div>
+        </div>
+        <button class="primary compact" id="openAdd">+ 기록 추가</button>
+      </div>
+      <div id="runList"></div>
+    </section>
+
+    <section id="settings" class="panel">
+      <div class="card">
+        <div class="card-title">데이터 관리</div>
+        <p class="muted">기록은 이 아이폰의 브라우저 저장소에 보관돼. Safari 데이터 삭제 시 함께 사라질 수 있으니 가끔 백업해두는 걸 권장해.</p>
+        <div class="stack">
+          <button class="secondary" id="exportBtn">기록 JSON 백업</button>
+          <label class="secondary file-label">기록 JSON 복원<input id="importInput" type="file" accept="application/json" hidden></label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">홈 화면 설치</div>
+        <p>iPhone Safari에서 공유 버튼 → <b>홈 화면에 추가</b>를 누르면 일반 앱처럼 실행할 수 있어.</p>
+        <p class="muted">PWA의 매일 정시 예약 알림은 별도 푸시 서버가 필요해서 이번 버전에는 넣지 않았어. 앱을 열면 그날 계획은 자동으로 다시 계산돼.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">코칭 원칙</div>
+        <p class="muted">월 회복 / 화 이지 / 목 품질 / 토 롱런 · 수·금 휴식 중심 · 일 선택적 저강도. 최근 부하, 직전 롱런/품질훈련, RPE·통증, 날씨를 반영해서 자동 하향 또는 진행.</p>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="addDialog">
+    <form method="dialog" id="runForm">
+      <div class="dialog-head">
+        <h2>훈련 입력</h2>
+        <button value="cancel" class="xbtn" aria-label="닫기">×</button>
+      </div>
+
+      <label>날짜<input id="runDate" type="date" required></label>
+      <label>종류
+        <select id="runType">
+          <option>이지</option><option>회복런</option><option>템포</option><option>하프페이스</option>
+          <option>인터벌</option><option>롱런</option><option>등산</option><option>근력</option>
+        </select>
+      </label>
+
+      <div class="two">
+        <label>거리 (km)<input id="distanceKm" type="number" step="0.01" min="0"></label>
+        <label>총 시간 (분)<input id="durationMinutes" type="number" step="0.1" min="0"></label>
+      </div>
+      <div class="auto-row">자동 평균페이스 <strong id="pacePreview">-</strong></div>
+
+      <div class="two">
+        <label>평균 심박<input id="avgHeartRate" type="number" min="0"></label>
+        <label>최대 심박<input id="maxHeartRate" type="number" min="0"></label>
+      </div>
+      <div class="two">
+        <label>평균 케이던스<input id="cadence" type="number" min="0"></label>
+        <label>접지시간 (ms)<input id="groundContactMs" type="number" min="0"></label>
+      </div>
+      <label>수직진폭 (cm)<input id="verticalOscillationCm" type="number" step="0.1" min="0"></label>
+      <div class="auto-row">자동 계산 보폭 <strong id="stridePreview">-</strong></div>
+
+      <label>RPE <span id="rpeVal">3</span>/10<input id="rpe" type="range" min="1" max="10" value="3"></label>
+      <label>통증 <span id="runPainVal">0</span>/10<input id="runPain" type="range" min="0" max="10" value="0"></label>
+      <label>통증 부위<input id="painArea" type="text" placeholder="선택"></label>
+      <label>신발<input id="shoe" type="text" placeholder="예: Deviate Nitro 4"></label>
+      <label>메모<textarea id="notes" rows="3"></textarea></label>
+
+      <div class="dialog-actions">
+        <button value="cancel" class="secondary">취소</button>
+        <button id="saveRun" value="default" class="primary">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
