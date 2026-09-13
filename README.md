@@ -45,3 +45,4 @@ Python이 있다면:
 `http://localhost:8000`
 
 서비스 워커/PWA 설치 기능은 실제 iPhone에서는 HTTPS 호스팅에서 사용하세요.
+PWA v2
