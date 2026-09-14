@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="러닝 코칭" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icon-192.png" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=7.2" />
   <title>러닝 코칭</title>
 </head>
 <body>
@@ -31,7 +31,7 @@
     <div class="panel-track" id="panelTrack">
     <section id="today" class="panel active">
       <div class="card plan-card hero-card">
-        <div class="eyebrow plan-eyebrow">오늘의 코칭</div>
+        <div id="planEyebrow" class="eyebrow plan-eyebrow">오늘의 코칭</div>
         <h2 id="planTitle">계산 중…</h2>
         <div class="plan-grid">
           <div><span>거리</span><strong id="planDistance">-</strong></div>
@@ -55,14 +55,16 @@
           <button class="status-item" data-condition="pain"><span>통증</span><strong id="painDisplay">-</strong></button>
           <button class="status-item" data-condition="sleepQuality"><span>수면상태</span><strong id="sleepDisplay">-</strong></button>
         </div>
+        <label>오늘 통증 반응<select id="todayPainResponse"><option value="unknown">미확인</option><option value="none">통증 없음</option><option value="mild">가벼운 불편감 · 보행 정상</option><option value="worse">달릴수록 또는 다음 날 악화</option><option value="red">보행 통증 · 절뚝거림 · 뼈의 점 압통</option></select></label>
       </div>
+
 
       <div class="card week-card">
         <div class="row between week-head">
           <div class="card-title no-margin">이번 주 러닝</div>
           <div class="intensity-pill" id="easyRatioBadge">이지 —</div>
         </div>
-        <div id="weekStrip" class="week-strip" aria-label="이번 주 러닝 일정"></div>
+        <div id="weekBudget" class="muted small-text"></div><div id="weekStrip" class="week-strip" aria-label="이번 주 러닝 일정"></div>
       </div>
 
       <div class="card weather-card">
@@ -70,11 +72,11 @@
           <div><div class="card-title no-margin">오늘 날씨 · 청도 이서면 인근</div><div id="weatherSummary" class="weather-summary">날씨 불러오는 중…</div></div>
           <button class="small-btn" id="refreshWeather">새로고침</button>
         </div>
-        <div id="hourlyWeather" class="hourly-weather" aria-label="시간대별 날씨"></div>
+        <label>날씨 기준 시각<select id="trainingHour" data-max="23"></select></label><div id="hourlyWeather" class="hourly-weather" aria-label="시간대별 날씨"></div>
       </div>
 
       <div class="card target-card" id="targetCard" hidden>
-        <div class="row between compact-row"><div><div class="eyebrow">다음 목표</div><div class="target-name" id="targetName">하프마라톤</div><div class="muted" id="targetDetail"></div></div><div class="target-dday" id="targetDday"></div></div>
+        <div class="row between compact-row"><div><div class="eyebrow">다음 목표</div><div class="target-name" id="targetName">하프마라톤</div><div class="muted" id="targetDetail"></div></div><div class="target-dday" id="targetDday"></div></div><p id="goalProbability"></p><details><summary>추정 기준</summary><p class="muted small-text">수동 능력과 목표 기록의 차이를 환산한 미검증 모형 추정치예요. 코스·날씨·장거리 내구력은 포함하지 않아 실제 성공 확률과 다를 수 있어요.</p></details>
       </div>
 
       <div class="card mileage-card">
@@ -105,25 +107,27 @@
           <label>대회명<input id="raceName" type="text" placeholder="예: 청도 하프마라톤" /></label>
           <div class="two">
             <label>대회일<input id="raceDate" type="date" /></label>
-            <label>거리 (km)<input id="raceDistance" type="number" step="0.001" min="1" /></label>
+            <label>종목<select id="raceDistance"><option value="5">5km</option><option value="10">10km</option><option value="21.0975">하프</option><option value="42.195">풀</option></select></label>
           </div>
-          <label>목표 기록 (분)<input id="raceTargetMinutes" type="number" step="1" min="1" /></label>
+          <div>목표 기록</div><div class="two"><label>시간<select id="raceTargetHours" data-max="23"></select></label><label>분<select id="raceTargetMins" data-max="59"></select></label></div>
           <div class="auto-row">자동 목표 페이스 <strong id="raceTargetPace">-</strong></div>
         </div>
-        <p class="muted small-text">대회 목표는 오늘의 코칭을 대회 일정에 맞게 조정할 때만 사용해. 꺼두면 일반 주간 훈련 모드로 동작해.</p>
+        <button type="button" id="saveRace" class="primary">대회 저장</button><p id="raceSaveStatus" role="status"></p><label id="raceModeControl" class="switch-row"><input type="checkbox" id="raceTrainingEnabled">대회 모드</label>
       </div>
 
       <div class="card stack">
         <div class="card-title">현재 능력 · 훈련 기준</div>
         <div id="fitnessSummary" class="plan-copy"></div><div id="fitnessPaces" class="plan-copy"></div>
-        <p class="muted small-text">최근 90일 내 VDOT 반영을 선택한 최신 대회·타임트라이얼을 사용해요. 훈련 페이스는 공개 수식 기반 근사치이며 공식 V.O2 표와 차이가 있을 수 있어요. 가민 VO₂max와는 다른 값이에요.</p>
-        <label>현재 VDOT 수동 입력 (선택)<input id="manualVdot" type="number" min="20" max="85" step="0.1" placeholder="기록이 없으면 비워두세요"></label>
-        <label>수동 VDOT 기준 날짜<input id="manualVdotDate" type="date"></label>
+
+        <label>VDOT (선택)<input id="manualVdot" type="number" min="20" max="85" step="0.1" placeholder="기록이 없으면 비워두세요"></label>
+
         <label>젖산역치 심박 (보조 기준)<input id="thresholdHr" type="number" min="100" max="220"></label>
-        <label>오늘 운동 예정 시각<input id="trainingHour" type="number" min="0" max="23" step="1"></label>
-        <button id="saveCoachSettings" class="secondary">훈련 기준 저장</button>
-        <div id="weekBudget" class="muted small-text"></div>
-        <label>오늘 통증 반응<select id="todayPainResponse"><option value="unknown">미확인</option><option value="none">통증 없음</option><option value="mild">가벼운 불편감 · 보행 정상</option><option value="worse">달릴수록 또는 다음 날 악화</option><option value="red">보행 통증 · 절뚝거림 · 뼈의 점 압통</option></select></label>
+
+<div>5km 기록</div><div class="two"><label>분<select id="record5Min" data-max="180" data-blank="true"></select></label><label>초<select id="record5Sec" data-max="59"></select></label></div><div>10km 기록</div><div class="two"><label>분<select id="record10Min" data-max="180" data-blank="true"></select></label><label>초<select id="record10Sec" data-max="59"></select></label></div>
+        <button type="button" id="saveCoachSettings" class="primary">훈련 기준 저장</button>
+        <p id="coachSaveStatus" role="status" aria-live="polite" class="small-text"></p>
+        
+
       </div>
       <div class="card">
         <div class="card-title">데이터 관리</div>
@@ -134,16 +138,13 @@
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-title">코칭 원칙</div>
-        <p class="muted">현재 VDOT로 페이스를 설정하고 최근 수행량과 회복으로 시간·거리를 조정해요. 통증과 위험 날씨를 우선하며 대회 주간은 별도로 줄여요. 80/20은 참고 지표이며 비율을 맞추려고 훈련을 추가하지 않아요. 최근 기록이 부족하면 보수적인 임시 계획을 사용해요.</p>
-      </div>
+
     </section>
     </div>
   </main>
 
   <dialog id="addDialog" class="sheet-dialog">
-    <form method="dialog" id="runForm" class="sheet-content">
+    <form id="runForm" class="sheet-content">
       <div class="sheet-handle"></div>
       <div class="dialog-head sticky-head">
         <h2 id="runDialogTitle">훈련 입력</h2>
@@ -159,10 +160,7 @@
         </select>
       </label>
 
-      <div class="two">
-        <label>거리 (km)<input id="distanceKm" type="number" step="0.01" min="0"></label>
-        <label>총 시간 (분)<input id="durationMinutes" type="number" step="0.1" min="0"></label>
-      </div>
+      <label>거리 (km)<input id="distanceKm" type="number" step="0.01" min="0"></label><input id="durationMinutes" type="hidden"><div>총 시간</div><div class="two"><label>시간<select id="durationHours" data-max="23"></select></label><label>분<select id="durationMins" data-max="59"></select></label></div>
       <div class="auto-row">자동 평균페이스 <strong id="pacePreview">-</strong></div>
 
       <div class="two">
@@ -186,8 +184,7 @@
       </div>
       <label>신발<input id="shoe" type="text" placeholder="예: Deviate Nitro 4"></label>
       <details class="card"><summary>본운동 · 수행 결과 · 통증 반응</summary><div class="stack">
-        <label class="switch-row"><input type="checkbox" id="fitnessEligible">현재 능력을 보여주는 전력 대회·타임트라이얼 기록으로 VDOT 갱신</label>
-        <p class="muted small-text">평탄한 코스에서 정상 컨디션으로 달린 기록만 선택. 워밍업·쿨다운은 총 기록에 포함하지 마세요. 일반 훈련은 반영하지 않아요.</p>
+
         <div class="two"><label>본운동 합계 거리 (km)<input id="workKm" type="number" min="0" step="0.01"></label><label>본운동 합계 시간 (분)<input id="workMinutes" type="number" min="0" step="0.1"></label></div>
         <div class="two"><label>반복 횟수<input id="repetitions" type="number" min="0" step="1"></label><label>반복 사이 회복 (분)<input id="recoveryMinutes" type="number" min="0" step="0.1"></label></div>
         <label>수행 결과<select id="completion"><option value="">미입력</option><option value="comfortable">여유 있게 완료</option><option value="hard">겨우 완료</option><option value="stopped">중단</option></select></label>
@@ -236,7 +233,6 @@
   <dialog id="conditionDialog" class="mini-sheet"><div class="mini-sheet-inner"><div class="sheet-handle"></div><div class="dialog-head"><h2 id="conditionTitle">상태</h2><button type="button" class="xbtn" id="closeCondition">닫기</button></div><div id="conditionChoices" class="number-choices"></div></div></dialog>
 
   <dialog id="discardDialog" class="action-sheet"><div class="action-sheet-inner"><h3>훈련 입력을 닫을까?</h3><p class="muted">작성한 내용을 저장하거나 버릴 수 있어.</p><button id="saveAndClose" class="action-primary">저장하고 닫기</button><button id="discardAndClose" class="action-danger">저장하지 않고 닫기</button><button id="keepEditing" class="action-cancel">계속 작성</button></div></dialog>
-  <script src="coach.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=7.2"></script>
 </body>
 </html>

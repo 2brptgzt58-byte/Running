@@ -16,3 +16,8 @@ dialog{color:var(--text);border:0;padding:0;background:transparent;max-width:non
 @media(max-width:380px){.status-item strong{font-size:16px}.status-item span{font-size:10px}.plan-grid{grid-template-columns:1fr 1fr}.two{grid-template-columns:1fr 1fr}}
 
 @media (prefers-reduced-motion:no-preference){dialog[open].mini-sheet .mini-sheet-inner,dialog[open].action-sheet .action-sheet-inner,dialog[open].sheet-dialog .sheet-content{animation:sheetUp .24s cubic-bezier(.22,.61,.36,1)}@keyframes sheetUp{from{transform:translateY(18px);opacity:.82}to{transform:translateY(0);opacity:1}}}
+
+/* Keep native time pickers and date fields inside each panel. */
+.two > *, label, input, select {min-width:0;max-width:100%;box-sizing:border-box} input,select,textarea{font-size:16px} #coachSaveStatus:empty,#raceSaveStatus:empty{display:none}
+
+[hidden]{display:none!important}
