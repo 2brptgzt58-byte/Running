@@ -18,6 +18,11 @@ let weatherHourly = [];
 let selectedAnalysisRunId = null;
 
 const $ = id => document.getElementById(id);
+function populatePainAreaSelect(id){
+  const el=$(id);
+  if(!el) return;
+  el.innerHTML=PAIN_AREAS.map(area=>`<option value="${area}">${area}</option>`).join("");
+}
 const pad = n => String(n).padStart(2,"0");
 const dateKey = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const startOfDay = d => new Date(d.getFullYear(),d.getMonth(),d.getDate());
