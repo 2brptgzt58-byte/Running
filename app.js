@@ -351,18 +351,14 @@ function renderWeekSchedule(schedule,intensityStats){
   $("weekStrip").querySelectorAll(".week-day").forEach(btn=>btn.onclick=()=>{
     const e=schedule.find(x=>x.key===btn.dataset.weekDate); if(!e||e.index>todayIdx)return; openWeekStatusPicker(e);
   });
-  const badge=$("easyRatioBadge"), note=$("intensityNote");
+  const badge=$("easyRatioBadge");
   badge.className="intensity-pill";
-  if(intensityStats.easyRatio==null){badge.textContent="이지 —";note.textContent="최근 28일 러닝 시간이 쌓이면 이지 강도 비중을 시간 기준으로 조절해.";return}
+  if(intensityStats.easyRatio==null){badge.textContent="이지 —";return}
   const pct=Math.round(intensityStats.easyRatio*100); badge.textContent=`이지 ${pct}%`;
-  const timePct=intensityStats.easyTimeRatio==null?null:Math.round(intensityStats.easyTimeRatio*100);
-  const timeInfo=timePct==null?"":` · 시간 기준 ${timePct}%`;
   const band=intensityBand(intensityStats);
-  const projected=schedule.projectedEasyRatio==null?"":` · 주말 예상 ${Math.round(schedule.projectedEasyRatio*100)}%`;
-  if(band==="balanced"){badge.classList.add("on");note.textContent=`최근 28일 세션 기준 목표 범위 75–85% 안이야${timeInfo}. 중심값은 약 80%${projected}.`}
-  else if(band==="needEasy"){badge.classList.add("low");note.textContent=`이지 세션 비중이 낮아 남은 품질훈련을 줄이고 저강도를 우선해${timeInfo}${projected}.`}
-  else if(band==="needQuality"){badge.classList.add("high");note.textContent=`이지 세션 비중이 높은 편이야. 회복 상태가 좋으면 이번 주 품질훈련 1회를 유지해${timeInfo}${projected}.`}
-  else {badge.classList.add("high");note.textContent=`최근 28일 ${intensityStats.sessionCount}회 · 데이터가 더 쌓이기 전에는 80% 규칙을 강제하지 않아.`}
+  if(band==="balanced") badge.classList.add("on");
+  else if(band==="needEasy") badge.classList.add("low");
+  else badge.classList.add("high");
 }
 function openWeekStatusPicker(entry){
   weekStatusDate=entry.key;
