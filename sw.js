@@ -1,9 +1,10 @@
-const CACHE_NAME = "running-coach-v5-20260914b";
+const CACHE_NAME = "running-coach-v6-adaptive-20260914";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./coach.js",
   "./manifest.webmanifest",
   "./icon-192.png",
   "./icon-512.png"

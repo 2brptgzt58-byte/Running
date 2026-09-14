@@ -113,6 +113,18 @@
         <p class="muted small-text">대회 목표는 오늘의 코칭을 대회 일정에 맞게 조정할 때만 사용해. 꺼두면 일반 주간 훈련 모드로 동작해.</p>
       </div>
 
+      <div class="card stack">
+        <div class="card-title">현재 능력 · 훈련 기준</div>
+        <div id="fitnessSummary" class="plan-copy"></div><div id="fitnessPaces" class="plan-copy"></div>
+        <p class="muted small-text">최근 90일 내 VDOT 반영을 선택한 최신 대회·타임트라이얼을 사용해요. 훈련 페이스는 공개 수식 기반 근사치이며 공식 V.O2 표와 차이가 있을 수 있어요. 가민 VO₂max와는 다른 값이에요.</p>
+        <label>현재 VDOT 수동 입력 (선택)<input id="manualVdot" type="number" min="20" max="85" step="0.1" placeholder="기록이 없으면 비워두세요"></label>
+        <label>수동 VDOT 기준 날짜<input id="manualVdotDate" type="date"></label>
+        <label>젖산역치 심박 (보조 기준)<input id="thresholdHr" type="number" min="100" max="220"></label>
+        <label>오늘 운동 예정 시각<input id="trainingHour" type="number" min="0" max="23" step="1"></label>
+        <button id="saveCoachSettings" class="secondary">훈련 기준 저장</button>
+        <div id="weekBudget" class="muted small-text"></div>
+        <label>오늘 통증 반응<select id="todayPainResponse"><option value="unknown">미확인</option><option value="none">통증 없음</option><option value="mild">가벼운 불편감 · 보행 정상</option><option value="worse">달릴수록 또는 다음 날 악화</option><option value="red">보행 통증 · 절뚝거림 · 뼈의 점 압통</option></select></label>
+      </div>
       <div class="card">
         <div class="card-title">데이터 관리</div>
         <p class="muted">훈련 기록과 컨디션 이력은 이 아이폰의 브라우저 저장소에 보관돼. Safari 데이터 삭제 시 사라질 수 있으니 가끔 백업해두는 걸 권장해.</p>
@@ -124,7 +136,7 @@
 
       <div class="card">
         <div class="card-title">코칭 원칙</div>
-        <p class="muted">기본 골격은 월 회복 / 화 이지 / 목 품질 / 토 롱런이지만 실제 수행 여부에 따라 남은 주간 일정이 자동 재배치돼. 최근 28일 러닝 시간의 약 80%를 저강도로 두되 75–85%를 실전 목표 범위로 사용하고, session-RPE·최근 마일리지·직전 핵심훈련·상태·날씨를 함께 반영해 조정해.</p>
+        <p class="muted">현재 VDOT로 페이스를 설정하고 최근 수행량과 회복으로 시간·거리를 조정해요. 통증과 위험 날씨를 우선하며 대회 주간은 별도로 줄여요. 80/20은 참고 지표이며 비율을 맞추려고 훈련을 추가하지 않아요. 최근 기록이 부족하면 보수적인 임시 계획을 사용해요.</p>
       </div>
     </section>
     </div>
@@ -143,7 +155,7 @@
       <label>종류
         <select id="runType">
           <option>이지</option><option>회복런</option><option>템포</option><option>하프페이스</option>
-          <option>인터벌</option><option>롱런</option><option>등산</option><option>근력</option>
+          <option>대회</option><option>타임트라이얼</option><option>인터벌</option><option>롱런</option><option>등산</option><option>근력</option>
         </select>
       </label>
 
@@ -173,6 +185,17 @@
         </div>
       </div>
       <label>신발<input id="shoe" type="text" placeholder="예: Deviate Nitro 4"></label>
+      <details class="card"><summary>본운동 · 수행 결과 · 통증 반응</summary><div class="stack">
+        <label class="switch-row"><input type="checkbox" id="fitnessEligible">현재 능력을 보여주는 전력 대회·타임트라이얼 기록으로 VDOT 갱신</label>
+        <p class="muted small-text">평탄한 코스에서 정상 컨디션으로 달린 기록만 선택. 워밍업·쿨다운은 총 기록에 포함하지 마세요. 일반 훈련은 반영하지 않아요.</p>
+        <div class="two"><label>본운동 합계 거리 (km)<input id="workKm" type="number" min="0" step="0.01"></label><label>본운동 합계 시간 (분)<input id="workMinutes" type="number" min="0" step="0.1"></label></div>
+        <div class="two"><label>반복 횟수<input id="repetitions" type="number" min="0" step="1"></label><label>반복 사이 회복 (분)<input id="recoveryMinutes" type="number" min="0" step="0.1"></label></div>
+        <label>수행 결과<select id="completion"><option value="">미입력</option><option value="comfortable">여유 있게 완료</option><option value="hard">겨우 완료</option><option value="stopped">중단</option></select></label>
+        <label>다음 날 회복<select id="nextDay"><option value="">아직 모름</option><option value="good">평소처럼 회복</option><option value="poor">피로·통증 악화</option></select></label>
+        <label class="switch-row"><input id="walkingPain" type="checkbox">보행 통증 또는 절뚝거림</label>
+        <label class="switch-row"><input id="focalPain" type="checkbox">뼈의 한 지점에 뚜렷한 압통</label>
+        <label class="switch-row"><input id="worseningPain" type="checkbox">달릴수록 통증 증가</label>
+      </div></details>
       <label>메모<textarea id="notes" rows="3"></textarea></label>
 
       <div class="dialog-actions">
@@ -213,6 +236,7 @@
   <dialog id="conditionDialog" class="mini-sheet"><div class="mini-sheet-inner"><div class="sheet-handle"></div><div class="dialog-head"><h2 id="conditionTitle">상태</h2><button type="button" class="xbtn" id="closeCondition">닫기</button></div><div id="conditionChoices" class="number-choices"></div></div></dialog>
 
   <dialog id="discardDialog" class="action-sheet"><div class="action-sheet-inner"><h3>훈련 입력을 닫을까?</h3><p class="muted">작성한 내용을 저장하거나 버릴 수 있어.</p><button id="saveAndClose" class="action-primary">저장하고 닫기</button><button id="discardAndClose" class="action-danger">저장하지 않고 닫기</button><button id="keepEditing" class="action-cancel">계속 작성</button></div></dialog>
+  <script src="coach.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
