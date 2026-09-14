@@ -11,7 +11,7 @@ const DEFAULT_SETTINGS = {
   raceDistance: 21.0975,
   raceTargetMinutes: 110
 };
-const DEFAULT_WELLNESS = {fatigue:2,soreness:2,pain:0,sleepQuality:4,painArea:"",painSide:"오른쪽",note:""};
+const DEFAULT_WELLNESS = {fatigue:null,soreness:null,pain:null,sleepQuality:null};
 
 let weather = null;
 let weatherHourly = [];
@@ -106,19 +106,13 @@ function summarize(runs,wellnessHistory,ref=new Date()){
 }
 
 function painTrend(history,ref=new Date()){
-  const today=startOfDay(ref), entries=[];
-  for(let i=6;i>=0;i--){
-    const d=dateKey(addDays(today,-i)), w=history[d];
-    if(w&&Number(w.pain)>0) entries.push({date:d,pain:Number(w.pain),area:w.painArea||"",side:w.painSide||""});
-  }
-  if(entries.length<2) return null;
-  const latest=entries[entries.length-1];
-  const same=entries.filter(x=>x.area===latest.area&&x.side===latest.side);
-  if(same.length<2) return null;
-  const vals=same.slice(-3).map(x=>x.pain);
-  if(vals.length>=2 && vals.every((v,i,a)=>i===0||v>a[i-1])) return {direction:"up",values:vals,label:`${latest.side} ${latest.area}`.trim()};
-  if(vals.length>=2 && vals.every((v,i,a)=>i===0||v<a[i-1])) return {direction:"down",values:vals,label:`${latest.side} ${latest.area}`.trim()};
-  return {direction:"flat",values:vals,label:`${latest.side} ${latest.area}`.trim()};
+  const today=startOfDay(ref), vals=[];
+  for(let i=6;i>=0;i--){ const w=history[dateKey(addDays(today,-i))]; if(w && w.pain!==null && w.pain!==undefined) vals.push(Number(w.pain)); }
+  if(vals.length<2) return null;
+  const recent=vals.slice(-3);
+  if(recent.length>=2 && recent.every((v,i,a)=>i===0||v>a[i-1])) return {direction:"up",values:recent,label:"통증"};
+  if(recent.length>=2 && recent.every((v,i,a)=>i===0||v<a[i-1])) return {direction:"down",values:recent,label:"통증"};
+  return {direction:"flat",values:recent,label:"통증"};
 }
 
 function adjustmentText({hotHumid,rampHigh,loadHigh,hard48h}){
@@ -136,8 +130,8 @@ function planFor(date,race,w,wellness,load,trend){
   const raceActive=race?.enabled && daysToRace>=0;
   const isRain=(w?.precipitation??0)>0.1 || ["비","뇌우"].includes(w?.description);
   const hotHumid=(w?.temperature??20)>=27&&(w?.humidity??50)>=70;
-  const poorSleep=Number(wellness.sleepQuality)<=2;
-  const poorRecovery=Number(wellness.pain)>=3||Number(wellness.fatigue)>=7||Number(wellness.soreness)>=7||poorSleep||load.recentPain>=3;
+  const poorSleep=wellness.sleepQuality!=null && Number(wellness.sleepQuality)<=2;
+  const poorRecovery=Number(wellness.pain||0)>=3||Number(wellness.fatigue||0)>=7||Number(wellness.soreness||0)>=7||poorSleep||load.recentPain>=3;
   const rampHigh=(load.rampPercent??0)>=30&&load.last7DaysKm>=30;
   const loadHigh=load.last7DaysKm>=42;
   const trendWarning=trend?.direction==="up";
@@ -235,29 +229,32 @@ function formatMinutes(min){
   const n=Number(min); if(!n) return "-"; const h=Math.floor(n/60),m=Math.round(n%60); return h?`${h}:${pad(m)}`:`${m}분`;
 }
 
-function populateScoreSelect(id){
-  const el=$(id); if(el.options.length) return;
-  for(let i=0;i<=10;i++){const o=document.createElement("option");o.value=i;o.textContent=`${i}/10`;el.appendChild(o)}
-}
-function populatePainAreaSelect(id){
-  const el=$(id); if(!el||el.options.length) return;
-  PAIN_AREAS.forEach(v=>{const o=document.createElement("option");o.value=v;o.textContent=v;el.appendChild(o)});
-}
+function sleepLabel(v){ return ({1:"매우 나쁨",2:"나쁨",3:"보통",4:"좋음",5:"매우 좋음"})[v] || "–"; }
 function renderWellness(w){
-  $("fatigue").value=Number(w.fatigue); $("soreness").value=Number(w.soreness); $("pain").value=Number(w.pain); $("sleepQuality").value=Number(w.sleepQuality||3);
-  $("wellnessDate").textContent=dateKey(new Date());
-  const show=Number(w.pain)>0; $("painDetails").hidden=!show;
-  if(show){
-    $("wellnessPainArea").value=w.painArea||"정강이"; $("wellnessPainSide").value=w.painSide||"오른쪽"; $("wellnessNote").value=w.note||"";
-  }
+  $("fatigueDisplay").textContent=w.fatigue==null?"–":w.fatigue;
+  $("sorenessDisplay").textContent=w.soreness==null?"–":w.soreness;
+  $("painDisplay").textContent=w.pain==null?"–":w.pain;
+  $("sleepDisplay").textContent=sleepLabel(w.sleepQuality);
+  document.querySelector('[data-condition="fatigue"]').classList.toggle("alert",Number(w.fatigue||0)>=7);
+  document.querySelector('[data-condition="soreness"]').classList.toggle("alert",Number(w.soreness||0)>=7);
+  document.querySelector('[data-condition="pain"]').classList.toggle("alert",Number(w.pain||0)>=4);
 }
-function saveWellnessFromUI(){
-  const data={
-    fatigue:Number($("fatigue").value),soreness:Number($("soreness").value),pain:Number($("pain").value),sleepQuality:Number($("sleepQuality").value),
-    painArea:Number($("pain").value)>0?$("wellnessPainArea").value:"",painSide:Number($("pain").value)>0?$("wellnessPainSide").value:"",note:Number($("pain").value)>0?$("wellnessNote").value.trim():""
-  };
-  setWellness(dateKey(new Date()),data); $("painDetails").hidden=data.pain===0;
-  $("wellnessSaved").textContent="저장됨"; setTimeout(()=>{$("wellnessSaved").textContent="자동 저장"},900); render();
+function setConditionValue(key,value){
+  const day=dateKey(new Date()), current=getWellness(day); current[key]=value; setWellness(day,current); render();
+}
+let activeConditionKey=null;
+function openConditionPicker(key){
+  activeConditionKey=key; const current=getWellness()[key], box=$("conditionChoices");
+  const labels={fatigue:"피로",soreness:"근육통",pain:"통증",sleepQuality:"수면상태"}; $("conditionTitle").textContent=labels[key];
+  if(key==="sleepQuality"){
+    box.className="number-choices sleep-choices";
+    box.innerHTML=[1,2,3,4,5].map(v=>`<button class="choice-btn ${Number(current)===v?"selected":""}" data-value="${v}">${sleepLabel(v)}</button>`).join("");
+  }else{
+    box.className="number-choices";
+    box.innerHTML=Array.from({length:11},(_,v)=>`<button class="choice-btn ${Number(current)===v?"selected":""}" data-value="${v}">${v}</button>`).join("");
+  }
+  box.querySelectorAll(".choice-btn").forEach(btn=>btn.onclick=()=>{setConditionValue(key,Number(btn.dataset.value));$("conditionDialog").close();});
+  $("conditionDialog").showModal();
 }
 
 function renderRuns(runs){
@@ -387,50 +384,46 @@ function saveSettingsFromUI(){
   saveSettings(s); $("raceFields").hidden=!s.raceEnabled; $("raceTargetPace").textContent=paceFromMinutes(s.raceDistance,s.raceTargetMinutes); render();
 }
 
+function switchTab(tabId,direction=0){
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.tab===tabId));
+  document.querySelectorAll(".panel").forEach(x=>x.classList.toggle("active",x.id===tabId));
+}
+function installSwipeTabs(){
+  const order=["today","log","settings"]; let sx=0,sy=0,tracking=false;
+  document.querySelector("main").addEventListener("touchstart",e=>{ if(e.target.closest(".hourly-weather, dialog, input, select, textarea"))return; const t=e.touches[0];sx=t.clientX;sy=t.clientY;tracking=true; },{passive:true});
+  document.querySelector("main").addEventListener("touchend",e=>{ if(!tracking)return;tracking=false;const t=e.changedTouches[0],dx=t.clientX-sx,dy=t.clientY-sy;if(Math.abs(dx)<55||Math.abs(dx)<Math.abs(dy)*1.25)return;const active=document.querySelector(".tab.active")?.dataset.tab||"today",i=order.indexOf(active);const ni=dx<0?i+1:i-1;if(ni>=0&&ni<order.length)switchTab(order[ni],dx<0?1:-1); },{passive:true});
+}
+function runFormHasContent(){
+  return Boolean($("distanceKm").value||$("durationMinutes").value||$("avgHeartRate").value||$("maxHeartRate").value||$("cadence").value||$("groundContactMs").value||$("verticalOscillationCm").value||$("shoe").value.trim()||$("notes").value.trim()||$("editingRunId").value);
+}
+function buildRunFromForm(){
+  const type=$("runType").value,distance=Number($("distanceKm").value||0); if(distance<=0&&type!=="근력"){alert("러닝/등산 기록은 거리를 입력해줘.");return null}
+  const editingId=$("editingRunId").value;
+  return {id:editingId||(crypto.randomUUID?crypto.randomUUID():`${Date.now()}-${Math.random()}`),date:$("runDate").value,type,distanceKm:distance,durationMinutes:Number($("durationMinutes").value||0),avgHeartRate:Number($("avgHeartRate").value||0),maxHeartRate:Number($("maxHeartRate").value||0),cadence:Number($("cadence").value||0),groundContactMs:Number($("groundContactMs").value||0),verticalOscillationCm:Number($("verticalOscillationCm").value||0),rpe:Number($("rpe").value||3),pain:Number($("runPain").value||0),painArea:Number($("runPain").value)>0?$("painArea").value:"",painSide:Number($("runPain").value)>0?$("painSide").value:"",shoe:$("shoe").value.trim(),notes:$("notes").value.trim()};
+}
+function saveRunFromForm(){ const r=buildRunFromForm();if(!r)return false;let runs=loadRuns(),id=$("editingRunId").value;if(id)runs=runs.map(x=>x.id===id?r:x);else runs.push(r);saveRuns(runs);render();return true; }
+function requestCloseRun(){ if(!runFormHasContent()){$("addDialog").close();return} $("discardDialog").showModal(); }
 function init(){
-  migrateOldWellness(); ["fatigue","soreness","pain"].forEach(populateScoreSelect); populatePainAreaSelect("wellnessPainArea"); populatePainAreaSelect("painArea");
-
-  document.querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>{
-    document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===btn)); document.querySelectorAll(".panel").forEach(x=>x.classList.toggle("active",x.id===btn.dataset.tab));
-  });
-  ["fatigue","soreness","sleepQuality","wellnessPainArea","wellnessPainSide"].forEach(id=>$(id).onchange=saveWellnessFromUI);
-  $("pain").onchange=()=>{ $("painDetails").hidden=Number($("pain").value)===0; saveWellnessFromUI(); };
-  $("wellnessNote").onchange=saveWellnessFromUI;
-
+  migrateOldWellness(); populatePainAreaSelect("painArea");
+  document.querySelectorAll(".tab").forEach(btn=>btn.onclick=()=>switchTab(btn.dataset.tab)); installSwipeTabs();
+  document.querySelectorAll(".status-item").forEach(btn=>btn.onclick=()=>openConditionPicker(btn.dataset.condition)); $("closeCondition").onclick=()=>$("conditionDialog").close();
   $("refreshWeather").onclick=fetchWeather;
   $("openAdd").onclick=()=>{resetRunForm();$("addDialog").showModal()};
   ["distanceKm","durationMinutes","cadence"].forEach(id=>$(id).oninput=preview);
-  $("rpe").oninput=()=>{$("rpeVal").textContent=$("rpe").value};
+  $("rpePicker").onclick=()=>openRunRpePicker();
   $("runPain").oninput=()=>{$("runPainVal").textContent=$("runPain").value;$("runPainDetails").hidden=Number($("runPain").value)===0};
-  $("saveRun").onclick=e=>{
-    e.preventDefault(); const type=$("runType").value,distance=Number($("distanceKm").value||0); if(distance<=0&&type!=="근력"){alert("러닝/등산 기록은 거리를 입력해줘.");return}
-    const editingId=$("editingRunId").value;
-    const r={id:editingId||(crypto.randomUUID?crypto.randomUUID():`${Date.now()}-${Math.random()}`),date:$("runDate").value,type,distanceKm:distance,durationMinutes:Number($("durationMinutes").value||0),avgHeartRate:Number($("avgHeartRate").value||0),maxHeartRate:Number($("maxHeartRate").value||0),cadence:Number($("cadence").value||0),groundContactMs:Number($("groundContactMs").value||0),verticalOscillationCm:Number($("verticalOscillationCm").value||0),rpe:Number($("rpe").value||3),pain:Number($("runPain").value||0),painArea:Number($("runPain").value)>0?$("painArea").value:"",painSide:Number($("runPain").value)>0?$("painSide").value:"",shoe:$("shoe").value.trim(),notes:$("notes").value.trim()};
-    let runs=loadRuns(); if(editingId)runs=runs.map(x=>x.id===editingId?r:x);else runs.push(r); saveRuns(runs); $("addDialog").close(); render();
-  };
-
-  $("closeAnalysis").onclick=()=>$("analysisDialog").close(); $("analysisCloseBtn").onclick=()=>$("analysisDialog").close();
-  $("analysisEdit").onclick=()=>{const id=selectedAnalysisRunId;$("analysisDialog").close();openEditRun(id)};
-
+  $("saveRun").onclick=e=>{e.preventDefault();if(saveRunFromForm())$("addDialog").close()};
+  $("closeRunSheet").onclick=requestCloseRun; $("cancelRun").onclick=requestCloseRun; $("addDialog").addEventListener("cancel",e=>{e.preventDefault();requestCloseRun()});
+  $("addDialog").addEventListener("click",e=>{if(e.target===$("addDialog"))requestCloseRun()});
+  $("saveAndClose").onclick=()=>{if(saveRunFromForm()){$("discardDialog").close();$("addDialog").close()}};
+  $("discardAndClose").onclick=()=>{$("discardDialog").close();$("addDialog").close()}; $("keepEditing").onclick=()=>$("discardDialog").close();
+  $("closeAnalysis").onclick=()=>$("analysisDialog").close(); $("analysisCloseBtn").onclick=()=>$("analysisDialog").close(); $("analysisEdit").onclick=()=>{const id=selectedAnalysisRunId;$("analysisDialog").close();openEditRun(id)};
   ["raceEnabled","raceName","raceDate","raceDistance","raceTargetMinutes"].forEach(id=>$(id).onchange=saveSettingsFromUI);
-
-  $("exportBtn").onclick=()=>{
-    const blob=new Blob([JSON.stringify({version:3,exportedAt:new Date().toISOString(),runs:loadRuns(),wellnessHistory:loadWellnessHistory(),settings:loadSettings()},null,2)],{type:"application/json"});
-    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`running-coaching-backup-${dateKey(new Date())}.json`;a.click();URL.revokeObjectURL(a.href);
-  };
-  $("importInput").onchange=async e=>{
-    const file=e.target.files?.[0]; if(!file)return;
-    try{
-      const obj=JSON.parse(await file.text()); const runs=Array.isArray(obj)?obj:obj.runs; if(!Array.isArray(runs))throw new Error();
-      if(confirm(`훈련 기록 ${runs.length}개와 포함된 설정/컨디션 데이터로 현재 데이터를 교체할까?`)){
-        saveRuns(runs); if(obj.wellnessHistory&&typeof obj.wellnessHistory==="object")saveWellnessHistory(obj.wellnessHistory); if(obj.settings&&typeof obj.settings==="object")saveSettings({...DEFAULT_SETTINGS,...obj.settings}); render();
-      }
-    }catch{alert("올바른 러닝 코칭 백업 JSON 파일이 아니야.");}
-    e.target.value="";
-  };
-
-  if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}))}
-  render(); fetchWeather();
+  $("exportBtn").onclick=()=>{const blob=new Blob([JSON.stringify({version:4,exportedAt:new Date().toISOString(),runs:loadRuns(),wellnessHistory:loadWellnessHistory(),settings:loadSettings()},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`running-coaching-backup-${dateKey(new Date())}.json`;a.click();URL.revokeObjectURL(a.href)};
+  $("importInput").onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{const obj=JSON.parse(await file.text()),runs=Array.isArray(obj)?obj:obj.runs;if(!Array.isArray(runs))throw new Error();if(confirm(`훈련 기록 ${runs.length}개와 포함된 설정/상태 데이터로 현재 데이터를 교체할까?`)){saveRuns(runs);if(obj.wellnessHistory&&typeof obj.wellnessHistory==="object")saveWellnessHistory(obj.wellnessHistory);if(obj.settings&&typeof obj.settings==="object")saveSettings({...DEFAULT_SETTINGS,...obj.settings});render()}}catch{alert("올바른 러닝 코칭 백업 JSON 파일이 아니야.")}e.target.value=""};
+  if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}))} render();fetchWeather();
 }
-
+function openRunRpePicker(){
+  activeConditionKey="__rpe"; const box=$("conditionChoices"),cur=Number($("rpe").value||3); $("conditionTitle").textContent="RPE";box.className="number-choices";box.innerHTML=Array.from({length:10},(_,i)=>i+1).map(v=>`<button class="choice-btn ${cur===v?"selected":""}" data-value="${v}">${v}</button>`).join("");box.querySelectorAll(".choice-btn").forEach(btn=>btn.onclick=()=>{$("rpe").value=btn.dataset.value;$("rpeVal").textContent=btn.dataset.value;$("conditionDialog").close()});$("conditionDialog").showModal();
+}
 init();
