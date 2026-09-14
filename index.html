@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#111827" />
+  <meta name="theme-color" content="#0f172a" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="러닝 코칭" />
@@ -15,11 +15,10 @@
 <body>
   <header class="app-header">
     <div>
-      <div class="eyebrow">2026.10.25 하프마라톤</div>
+      <div class="eyebrow">PERSONAL RUNNING COACH</div>
       <h1>러닝 코칭</h1>
-      <div class="sub">목표 1:50 · 5:13/km</div>
+      <div class="sub">오늘의 훈련 · 컨디션 · 기록 분석</div>
     </div>
-    <div class="d-day" id="dDay">D-</div>
   </header>
 
   <nav class="tabs">
@@ -31,7 +30,7 @@
   <main>
     <section id="today" class="panel active">
       <div class="card">
-        <div class="card-title">최근 훈련 부하</div>
+        <div class="card-title">마일리지</div>
         <div class="metric-grid">
           <div><span>최근 7일</span><strong id="last7">0.0 km</strong></div>
           <div><span>최근 28일</span><strong id="last28">0.0 km</strong></div>
@@ -40,16 +39,30 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card target-card" id="targetCard" hidden>
+        <div class="row between compact-row">
+          <div>
+            <div class="eyebrow">다음 목표</div>
+            <div class="target-name" id="targetName">하프마라톤</div>
+            <div class="muted" id="targetDetail"></div>
+          </div>
+          <div class="target-dday" id="targetDday"></div>
+        </div>
+      </div>
+
+      <div class="card weather-card">
         <div class="row between">
-          <div class="card-title">현재 날씨 · 청도 이서면 인근</div>
+          <div>
+            <div class="card-title no-margin">오늘 날씨 · 청도 이서면 인근</div>
+            <div id="weatherSummary" class="weather-summary">날씨 불러오는 중…</div>
+          </div>
           <button class="small-btn" id="refreshWeather">새로고침</button>
         </div>
-        <div id="weatherLine" class="weather-line">날씨 불러오는 중…</div>
+        <div id="hourlyWeather" class="hourly-weather" aria-label="시간대별 날씨"></div>
       </div>
 
       <div class="card plan-card">
-        <div class="eyebrow">오늘 할 일</div>
+        <div class="eyebrow plan-eyebrow">오늘의 코칭</div>
         <h2 id="planTitle">계산 중…</h2>
         <div class="plan-grid">
           <div><span>거리</span><strong id="planDistance">-</strong></div>
@@ -59,26 +72,62 @@
           <div><span>쿨다운</span><strong id="planCd">-</strong></div>
         </div>
         <div class="divider"></div>
-        <div class="why-title">왜 이렇게 조정했나</div>
-        <p id="planAdjustment"></p>
-        <p id="planNote" class="muted"></p>
+        <div class="why-title">Why?</div>
+        <p id="planAdjustment" class="plan-copy"></p>
+        <p id="planNote" class="plan-copy"></p>
       </div>
 
-      <div class="card">
-        <div class="card-title">오늘 컨디션</div>
-        <div class="form-grid">
-          <label>피로 <span id="fatigueVal">2</span>/10
-            <input id="fatigue" type="range" min="0" max="10" value="2">
-          </label>
-          <label>근육통 <span id="sorenessVal">2</span>/10
-            <input id="soreness" type="range" min="0" max="10" value="2">
-          </label>
-          <label>통증 <span id="painVal">0</span>/10
-            <input id="pain" type="range" min="0" max="10" value="0">
-          </label>
-          <label class="checkbox-row"><input id="sleptWell" type="checkbox" checked> 잠을 잘 잤음</label>
+      <div class="card wellness-card">
+        <div class="row between wellness-head">
+          <div>
+            <div class="card-title no-margin">오늘 컨디션</div>
+            <div class="muted small-text" id="wellnessDate"></div>
+          </div>
+          <div class="saved-indicator" id="wellnessSaved">자동 저장</div>
         </div>
-        <button class="primary" id="recalc">훈련 다시 계산</button>
+
+        <div class="condition-list">
+          <label class="condition-row">
+            <span>피로</span>
+            <select id="fatigue" class="condition-select" aria-label="피로 점수"></select>
+          </label>
+          <label class="condition-row">
+            <span>근육통</span>
+            <select id="soreness" class="condition-select" aria-label="근육통 점수"></select>
+          </label>
+          <label class="condition-row">
+            <span>통증</span>
+            <select id="pain" class="condition-select" aria-label="통증 점수"></select>
+          </label>
+          <label class="condition-row">
+            <span>수면</span>
+            <select id="sleepQuality" class="condition-select wide" aria-label="수면 상태">
+              <option value="1">매우 나쁨</option>
+              <option value="2">나쁨</option>
+              <option value="3">보통</option>
+              <option value="4">좋음</option>
+              <option value="5">매우 좋음</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="painDetails" class="pain-details" hidden>
+          <div class="two">
+            <label>통증 부위
+              <select id="wellnessPainArea"></select>
+            </label>
+            <label>좌우
+              <select id="wellnessPainSide">
+                <option value="왼쪽">왼쪽</option>
+                <option value="오른쪽">오른쪽</option>
+                <option value="양쪽">양쪽</option>
+              </select>
+            </label>
+          </div>
+          <label>메모
+            <input id="wellnessNote" type="text" placeholder="예: 착지할 때만 약간 느낌" />
+          </label>
+        </div>
       </div>
     </section>
 
@@ -95,23 +144,32 @@
 
     <section id="settings" class="panel">
       <div class="card">
+        <div class="card-title">목표 대회</div>
+        <label class="switch-row"><input id="raceEnabled" type="checkbox" /> 목표 대회 사용</label>
+        <div id="raceFields" class="stack settings-fields">
+          <label>대회명<input id="raceName" type="text" placeholder="예: 청도 하프마라톤" /></label>
+          <div class="two">
+            <label>대회일<input id="raceDate" type="date" /></label>
+            <label>거리 (km)<input id="raceDistance" type="number" step="0.001" min="1" /></label>
+          </div>
+          <label>목표 기록 (분)<input id="raceTargetMinutes" type="number" step="1" min="1" /></label>
+          <div class="auto-row">자동 목표 페이스 <strong id="raceTargetPace">-</strong></div>
+        </div>
+        <p class="muted small-text">대회 목표는 오늘의 코칭을 대회 일정에 맞게 조정할 때만 사용해. 꺼두면 일반 주간 훈련 모드로 동작해.</p>
+      </div>
+
+      <div class="card">
         <div class="card-title">데이터 관리</div>
-        <p class="muted">기록은 이 아이폰의 브라우저 저장소에 보관돼. Safari 데이터 삭제 시 함께 사라질 수 있으니 가끔 백업해두는 걸 권장해.</p>
+        <p class="muted">훈련 기록과 컨디션 이력은 이 아이폰의 브라우저 저장소에 보관돼. Safari 데이터 삭제 시 사라질 수 있으니 가끔 백업해두는 걸 권장해.</p>
         <div class="stack">
-          <button class="secondary" id="exportBtn">기록 JSON 백업</button>
-          <label class="secondary file-label">기록 JSON 복원<input id="importInput" type="file" accept="application/json" hidden></label>
+          <button class="secondary" id="exportBtn">전체 JSON 백업</button>
+          <label class="secondary file-label">JSON 복원<input id="importInput" type="file" accept="application/json" hidden></label>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-title">홈 화면 설치</div>
-        <p>iPhone Safari에서 공유 버튼 → <b>홈 화면에 추가</b>를 누르면 일반 앱처럼 실행할 수 있어.</p>
-        <p class="muted">PWA의 매일 정시 예약 알림은 별도 푸시 서버가 필요해서 이번 버전에는 넣지 않았어. 앱을 열면 그날 계획은 자동으로 다시 계산돼.</p>
-      </div>
-
-      <div class="card">
         <div class="card-title">코칭 원칙</div>
-        <p class="muted">월 회복 / 화 이지 / 목 품질 / 토 롱런 · 수·금 휴식 중심 · 일 선택적 저강도. 최근 부하, 직전 롱런/품질훈련, RPE·통증, 날씨를 반영해서 자동 하향 또는 진행.</p>
+        <p class="muted">월 회복 / 화 이지 / 목 품질 / 토 롱런 · 수·금 휴식 중심 · 일 선택적 저강도. 최근 마일리지, 직전 롱런/품질훈련, RPE·통증, 오늘 컨디션, 날씨를 함께 반영해 자동 조정.</p>
       </div>
     </section>
   </main>
@@ -119,10 +177,11 @@
   <dialog id="addDialog">
     <form method="dialog" id="runForm">
       <div class="dialog-head">
-        <h2>훈련 입력</h2>
+        <h2 id="runDialogTitle">훈련 입력</h2>
         <button value="cancel" class="xbtn" aria-label="닫기">×</button>
       </div>
 
+      <input id="editingRunId" type="hidden" />
       <label>날짜<input id="runDate" type="date" required></label>
       <label>종류
         <select id="runType">
@@ -150,7 +209,12 @@
 
       <label>RPE <span id="rpeVal">3</span>/10<input id="rpe" type="range" min="1" max="10" value="3"></label>
       <label>통증 <span id="runPainVal">0</span>/10<input id="runPain" type="range" min="0" max="10" value="0"></label>
-      <label>통증 부위<input id="painArea" type="text" placeholder="선택"></label>
+      <div id="runPainDetails" hidden>
+        <div class="two">
+          <label>통증 부위<select id="painArea"></select></label>
+          <label>좌우<select id="painSide"><option>왼쪽</option><option>오른쪽</option><option>양쪽</option></select></label>
+        </div>
+      </div>
       <label>신발<input id="shoe" type="text" placeholder="예: Deviate Nitro 4"></label>
       <label>메모<textarea id="notes" rows="3"></textarea></label>
 
@@ -159,6 +223,21 @@
         <button id="saveRun" value="default" class="primary">저장</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="analysisDialog">
+    <div class="analysis-wrap">
+      <div class="dialog-head">
+        <h2>훈련 분석</h2>
+        <button class="xbtn" id="closeAnalysis" aria-label="닫기">×</button>
+      </div>
+      <div id="analysisMeta" class="analysis-meta"></div>
+      <div id="analysisBody" class="analysis-body"></div>
+      <div class="dialog-actions">
+        <button class="secondary" id="analysisEdit">편집</button>
+        <button class="primary" id="analysisCloseBtn">닫기</button>
+      </div>
+    </div>
   </dialog>
 
   <script src="app.js"></script>
