@@ -24,9 +24,11 @@
     <button class="tab active" data-tab="today">Today</button>
     <button class="tab" data-tab="log">훈련 기록</button>
     <button class="tab" data-tab="settings">설정</button>
+    <div class="tab-indicator" id="tabIndicator"><span></span></div>
   </nav>
 
-  <main>
+  <main class="panels-viewport" id="panelsViewport">
+    <div class="panel-track" id="panelTrack">
     <section id="today" class="panel active">
       <div class="card plan-card hero-card">
         <div class="eyebrow plan-eyebrow">오늘의 코칭</div>
@@ -35,6 +37,7 @@
           <div><span>거리</span><strong id="planDistance">-</strong></div>
           <div><span>페이스</span><strong id="planPace">-</strong></div>
           <div><span>심박</span><strong id="planHr">-</strong></div>
+          <div><span>RPE</span><strong id="planRpe">-</strong></div>
           <div><span>워밍업</span><strong id="planWu">-</strong></div>
           <div><span>쿨다운</span><strong id="planCd">-</strong></div>
         </div>
@@ -52,6 +55,18 @@
           <button class="status-item" data-condition="pain"><span>통증</span><strong id="painDisplay">-</strong></button>
           <button class="status-item" data-condition="sleepQuality"><span>수면상태</span><strong id="sleepDisplay">-</strong></button>
         </div>
+      </div>
+
+      <div class="card week-card">
+        <div class="row between week-head">
+          <div>
+            <div class="card-title no-margin">이번 주 러닝</div>
+            <div class="muted small-text">완료·미실시를 누르면 남은 일정이 자동 조정돼</div>
+          </div>
+          <div class="intensity-pill" id="easyRatioBadge">이지 —</div>
+        </div>
+        <div id="weekStrip" class="week-strip" aria-label="이번 주 러닝 일정"></div>
+        <div id="intensityNote" class="week-note muted"></div>
       </div>
 
       <div class="card weather-card">
@@ -113,9 +128,10 @@
 
       <div class="card">
         <div class="card-title">코칭 원칙</div>
-        <p class="muted">월 회복 / 화 이지 / 목 품질 / 토 롱런 · 수·금 휴식 중심 · 일 선택적 저강도. 최근 마일리지, 직전 롱런/품질훈련, RPE·통증, 오늘 컨디션, 날씨를 함께 반영해 자동 조정.</p>
+        <p class="muted">기본 골격은 월 회복 / 화 이지 / 목 품질 / 토 롱런이지만 실제 수행 여부에 따라 남은 주간 일정이 자동 재배치돼. 최근 28일 러닝 시간의 약 80%를 저강도로 두되 75–85%를 실전 목표 범위로 사용하고, session-RPE·최근 마일리지·직전 핵심훈련·상태·날씨를 함께 반영해 조정해.</p>
       </div>
     </section>
+    </div>
   </main>
 
   <dialog id="addDialog" class="sheet-dialog">
@@ -185,6 +201,18 @@
     </div>
   </dialog>
 
+
+  <dialog id="weekStatusDialog" class="action-sheet">
+    <div class="action-sheet-inner">
+      <div class="sheet-handle"></div>
+      <h3 id="weekStatusTitle">오늘 러닝</h3>
+      <p id="weekStatusText" class="muted"></p>
+      <button id="weekDone" class="action-primary">완료 ✓</button>
+      <button id="weekMissed" class="action-danger">미실시 ×</button>
+      <button id="weekPending" class="action-cancel">미정으로 되돌리기</button>
+      <button id="weekStatusCancel" class="action-cancel">취소</button>
+    </div>
+  </dialog>
 
   <dialog id="conditionDialog" class="mini-sheet"><div class="mini-sheet-inner"><div class="sheet-handle"></div><div class="dialog-head"><h2 id="conditionTitle">상태</h2><button type="button" class="xbtn" id="closeCondition">닫기</button></div><div id="conditionChoices" class="number-choices"></div></div></dialog>
 
