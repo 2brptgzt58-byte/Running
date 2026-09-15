@@ -1,5 +1,5 @@
-const CACHE_NAME='running-coach-v7.2-interval-audit';
-const ASSETS=['./','./index.html','./styles.css?v=7.2','./app.js?v=7.2','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
+const CACHE_NAME='running-coach-v9.0-progressive-records';
+const ASSETS=['./','./index.html','./styles.css?v=9.0','./app.js?v=9.0','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting()));});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('running-coach-')&&k!==CACHE_NAME).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
 self.addEventListener('fetch',event=>{

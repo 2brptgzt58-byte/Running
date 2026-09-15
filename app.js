@@ -3,87 +3,118 @@
 // not validated injury prediction thresholds.
 function formatPace(seconds){const s=Math.round(seconds);return Number.isFinite(s)&&s>0?`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}/km`:'—'}
 function vdotFromResult(km,t){if(!(km>=1.5&&km<=42.195&&t>0))return null;const v=km*1000/t;const n=(-4.6+.182258*v+.000104*v*v)/(.8+.1894393*Math.exp(-.012778*t)+.2989558*Math.exp(-.1932605*t));return n>=20&&n<=85?n:null}
+function equivalentMinutes(km,vdot){
+ if(!(km>0&&vdot>=20&&vdot<=85))return null;
+ let low=1,high=1440;
+ for(let i=0;i<70;i++){const t=(low+high)/2,v=km*1000/t,value=(-4.6+.182258*v+.000104*v*v)/(.8+.1894393*Math.exp(-.012778*t)+.2989558*Math.exp(-.1932605*t));if(value>vdot)low=t;else high=t}
+ return (low+high)/2;
+}
 function paceAt(vdot,fraction){const v=(-.182258+Math.sqrt(.182258**2+4*.000104*(4.6+vdot*fraction)))/(2*.000104);return 60000/v}
 function fitnessState(runs,s,ref){
- const five=vdotFromResult(5,+s.record5Minutes), ten=vdotFromResult(10,+s.record10Minutes);
- const manual=+s.manualVdot>=20&&+s.manualVdot<=85?+s.manualVdot:null;
- const values=[five,ten].filter(Boolean);
- const value=manual||(values.length?Math.min(...values):null);
- return {value,source:manual?'수동 VDOT':values.length?'수동 기록 기준':'운동 능력 미입력',stale:false,five,ten};
+ const five=vdotFromResult(5,+s.record5Minutes),ten=vdotFromResult(10,+s.record10Minutes),values=[five,ten].filter(Boolean);
+ const value=values.length?Math.min(...values):null;
+ return {value,source:values.length===2?'5km·10km 중 보수적 기준':five?'5km 기록 기준':ten?'10km 기록 기준':'5km 또는 10km 기록을 입력해 주세요',five,ten,stale:false};
 }
-function paceSet(f){if(!f.value)return null;return {easyFast:paceAt(f.value,.74),easySlow:paceAt(f.value,.59),threshold:paceAt(Math.min(f.value,f.ten||f.value),.86),interval:paceAt(Math.min(f.value,f.five||f.value),.98)}}
+function paceSet(f){if(!f.value)return null;return {easyFast:paceAt(f.value,.74),easySlow:paceAt(f.value,.59),threshold:paceAt(Math.min(f.value,f.ten||f.value),.86),interval:paceAt(Math.min(f.value,f.five||f.value),.98),raceVdot:Math.min(f.value,f.five||f.value,f.ten||f.value)}}
 function recentRuns(runs,ref,days){return runs.filter(isRunning).filter(r=>{const age=diffDaysSigned(localDate(r.date),ref);return age>=0&&age<days})}
-function volumeState(runs,ref,history){
- const start=mondayOf(ref), past=recentRuns(runs,addDays(start,-1),28), weeks=[0,1,2,3].map(i=>past.filter(r=>{const age=diffDaysSigned(localDate(r.date),start);return age>i*7&&age<=(i+1)*7}));
- const observed=weeks.filter(w=>w.length>=2).length, average=weeks.reduce((s,w)=>s+w.reduce((t,r)=>t+runMinutes(r),0),0)/4;
- const recent=recentRuns(runs,ref,30), longest=recent.reduce((a,r)=>+r.distanceKm>+(a?.distanceKm||0)?r:a,null);
- const last=recent.slice().sort((a,b)=>b.date.localeCompare(a.date))[0], gap=last?diffDaysSigned(localDate(last.date),ref):99;
- const bad=recentRuns(runs,ref,7).some(r=>r.rpe>=8||r.pain>=3||r.nextDay==='poor'||r.completion==='stopped')||Object.entries(history).some(([d,w])=>diffDaysSigned(localDate(d),ref)>=0&&diffDaysSigned(localDate(d),ref)<7&&(w.pain>=3||w.fatigue>=7||w.painResponse==='red'||w.painResponse==='worse'));
- const progression=observed>=3&&!bad&&gap<7&&weeks[0].length>=3&&weeks[1].length>=3;
- let budget=observed>=2?average*(progression?1.05:1):Math.min(120,Math.max(60,recent.reduce((s,r)=>s+runMinutes(r),0)/4));
- if(bad)budget*=.8;if(gap>=14)budget*=.6;
- return {budget,observed,bad,gap,longest,progression};
+function planCycle(ref,s){
+ const anchor=mondayOf(Number.isFinite(localDate(s.planStart).getTime())?localDate(s.planStart):ref);
+ const week=Math.max(0,Math.floor(diffDaysSigned(anchor,mondayOf(ref))/7));
+ return {week,index:week%4,recovery:week%4===3,anchor,blockStart:addDays(anchor,Math.floor(week/4)*28)};
+}
+function weekFacts(runs,start,s){
+ const end=addDays(start,7),items=runs.filter(isRunning).filter(r=>localDate(r.date)>=start&&localDate(r.date)<end),review=s.weekReviews?.[dateKey(start)];
+ // Missing days are not treated as days without exercise. Zero is known only after confirmation.
+ const known=review!=='unknown'&&(items.length>0&&(review==='complete'||items.length>=(+s.trainingDays||3))||!items.length&&review==='rest');
+ return {known,review,items,minutes:items.reduce((sum,r)=>sum+runMinutes(r),0),km:items.reduce((sum,r)=>sum+Number(r.distanceKm),0),date:start};
+}
+function volumeState(runs,ref,history,s=loadSettings()){
+ const cycle=planCycle(ref,s),start=mondayOf(ref),weeks=Array.from({length:8},(_,i)=>weekFacts(runs,addDays(start,-7*(i+1)),s));
+ const currentKnown=weeks.slice(0,4).filter(w=>w.known),observed=currentKnown.filter(w=>w.minutes>0).length;
+ const previous=weeks[0],recent=recentRuns(runs,ref,30),longest=recent.reduce((x,r)=>+r.distanceKm>+(x?.distanceKm||0)?r:x,null);
+ const bad=recentRuns(runs,ref,7).some(r=>r.pain>=3||r.rpe>=9||r.nextDay==='poor'||r.completion==='stopped')||Object.entries(history).some(([d,w])=>diffDaysSigned(localDate(d),ref)>=0&&diffDaysSigned(localDate(d),ref)<7&&(w.pain>=3||w.fatigue>=7||['red','worse'].includes(w.painResponse)));
+ let zeroWeeks=0;for(const w of weeks){if(w.known&&w.minutes===0)zeroWeeks++;else break}
+ const gap=zeroWeeks*7;
+ // A 4-week block takes its baseline from known non-recovery weeks BEFORE that block.
+ const blockWeeks=Array.from({length:8},(_,i)=>weekFacts(runs,addDays(cycle.blockStart,-7*(i+1)),s)).filter(w=>w.known&&w.minutes>0&&!planCycle(w.date,s).recovery);
+ const fallback=weeks.filter(w=>w.known&&w.minutes>0&&!planCycle(w.date,s).recovery);
+ const sources=(blockWeeks.length?blockWeeks:fallback).slice(0,3);
+ const declared=+s.baselineKm>0?+s.baselineKm*6:null;
+ const base=sources.length?sources.reduce((sum,w)=>sum+w.minutes,0)/sources.length:declared||75;
+ const weeklyKm=sources.length?sources.reduce((sum,w)=>sum+w.km,0)/sources.length:+s.baselineKm||0;
+ const progression=previous.known&&previous.minutes>0&&!bad&&observed>=2;
+ const growth=progression?[1,1.03,1.06,1][cycle.index]:1;
+ const factor=Math.min(cycle.recovery?.8:1,bad?.8:1,gap>=14?.6:gap>=7?.8:1);
+ return {baseBudget:base*growth,budget:base*growth*factor,factor,weeklyKm,observed,bad,gap,longest,progression,cycle,unknown:!previous.known,starter:observed<2,declared:Boolean(declared),knownWeeks:currentKnown.length};
 }
 function trainingRace(race){return {...race,enabled:Boolean(race.enabled&&race.trainingEnabled)}}
+function taperDays(distance){return distance>=40?21:distance>=20?14:7}
+function taperFactor(days,distance){if(days==null||days<0)return 1;return days<=7?.5:days<=taperDays(distance)?.75:1}
 function qualityWorkCap(days,distance){const factor=taperFactor(days,distance);return factor===.5?10:factor===.75?15:Infinity}
-function taperFactor(days,distance){if(days==null||days<0)return 1;const span=distance>=40?21:distance>=20?14:7;return days<=7?.5:days<=span?.75:1}
+function trainingPhase(ref,race,s){
+ const cycle=planCycle(ref,s),days=race.enabled?diffDaysSigned(ref,localDate(race.date)):null;
+ if(days!=null&&days<0&&days>=-7)return {label:'대회 후 회복',focus:'회복',cycle,days};
+ if(taperFactor(days,race.distance)<1)return {label:'대회 전 조절',focus:'훈련량 축소 · 익숙한 자극 유지',cycle,days};
+ const specific=days!=null&&days>0&&days<=(race.distance>=40?70:race.distance>=20?56:42);
+ const focus=specific?(race.distance<=5?'짧은 인터벌':race.distance<=10?'역치 · 인터벌':race.distance<40?'역치 · 하프 지속력':'장거리 지속력 · 대회 페이스'):cycle.recovery?'회복':cycle.index===2?'역치 · 인터벌':'기초 지구력 · 역치';
+ return {label:cycle.recovery?'회복 주간':specific?`${raceDistanceLabel(race.distance)} 준비`:`${cycle.index+1}주차 · ${cycle.index?'발전':'기초'}`,focus,cycle,days};
+}
 function adaptWeek(ref,runs,status,tid,race,s,history){
- race=trainingRace(race);
- const entries=buildAdaptiveWeek(ref,runs,status,tid), v=volumeState(runs,ref,history), days=race.enabled?diffDaysSigned(ref,localDate(race.date)):null;
+ race=trainingRace(race);const entries=buildAdaptiveWeek(ref,runs,status,tid,s),v=volumeState(runs,ref,history,s),days=race.enabled?diffDaysSigned(ref,localDate(race.date)):null,phase=trainingPhase(ref,race,s);
+ const taper=taperFactor(days,race.distance);
+ if(taper<1){const anchor=addDays(localDate(race.date),-taperDays(race.distance)),base=volumeState(runs,anchor,{},s);v.baseBudget=base.baseBudget;v.taperBaseline=dateKey(mondayOf(anchor));}
+ // Use the strongest volume reduction once, rather than multiplying several reductions.
+ const factor=Math.min(v.factor,taper),budget=Math.round(v.baseBudget*factor);
  entries.forEach(e=>{
-  if(e.resolvedStatus)return;
   const dr=race.enabled?diffDaysSigned(e.date,localDate(race.date)):null;
   if(dr===0)e.plannedType='race';
-  else if(dr<0&&dr>=-7)e.plannedType='rest';
-  else if(dr===1||dr===2)e.plannedType='rest';
-  else if(dr>0&&dr<=6)e.plannedType=dr===3?'quality':dr===5?'easy':'rest';
-  else if((v.observed<2||!fitnessState(runs,s,ref).value)&&e.plannedType==='quality')e.plannedType='easy';
-  if((v.observed<2||!fitnessState(runs,s,ref).value)&&e.plannedType==='quality')e.plannedType='easy';
-  // Respect hard sessions across week boundaries and manually completed sessions.
-  const recentHard=runs.some(r=>isRunning(r)&&(isQuality(r)||r.rpe>=8)&&diffDaysSigned(localDate(r.date),e.date)>0&&diffDaysSigned(localDate(r.date),e.date)<=2)||Object.entries(status).some(([d,x])=>x?.status==='done'&&['quality','race'].includes(x.planType)&&diffDaysSigned(localDate(d),e.date)>0&&diffDaysSigned(localDate(d),e.date)<=2);
-  const prior=entries[e.index-1];
-  if((recentHard||prior?.resolvedType==='quality'&&prior?.resolvedStatus==='done')&&e.plannedType==='quality')e.plannedType='easy';
-  if(recentHard&&e.plannedType==='long')e.plannedType='easy';
+  else if(dr<0&&dr>=-7||dr===1)e.plannedType='rest';
+  else if(dr>1&&dr<=7&&(e.plannedType==='long'||dr<=2&&e.plannedType==='quality'))e.plannedType='easy';
+  if(e.plannedType==='quality'&&(v.starter||v.cycle.recovery||!fitnessState(runs,s,ref).value))e.plannedType='easy';
+  if(e.plannedType==='long'&&v.starter&&!v.declared)e.plannedType='easy';
+  const hard=runs.some(r=>isRunning(r)&&(isQuality(r)||r.rpe>=8)&&diffDaysSigned(localDate(r.date),e.date)>0&&diffDaysSigned(localDate(r.date),e.date)<=2)||Object.entries(status).some(([d,x])=>x?.status==='done'&&['quality','race'].includes(x.planType)&&diffDaysSigned(localDate(d),e.date)>0&&diffDaysSigned(localDate(d),e.date)<=2);
+  if(hard&&['quality','long'].includes(e.plannedType))e.plannedType='easy';
  });
- const taper=taperFactor(days,race.distance);
- entries.budget=Math.round(v.budget*taper);entries.volume=v;
- const historic=recentRuns(runs,addDays(mondayOf(ref),-1),28);
- const validLoads=historic.filter(r=>r.durationMinutes>0&&r.rpe>0);
- const srpeBudget=v.observed>=3&&validLoads.length>=historic.length*.8?validLoads.reduce((x,r)=>x+sessionRpeLoad(r),0)/4*1.1*taper:null;
- // All remaining sessions share one fixed weekly time budget; completing one does
- // not allocate that session's full original budget a second time.
- const spent=entries.reduce((sum,e)=>sum+e.dayRuns.reduce((x,r)=>x+runMinutes(r),0)+(e.resolvedStatus==='done'&&!e.dayRuns.length?({quality:50,long:80,easy:40,recovery:25,optional:20}[e.resolvedType]||0):0),0);
- const weights={recovery:.5,easy:1,quality:1.1,long:1.8,optional:.4};
+ const weights={recovery:.6,easy:1,quality:1.2,long:race.enabled&&race.distance>=40?1.8:1.5,optional:.5},rpes={recovery:2,easy:3,quality:4,long:3,optional:2};
+ let total=entries.reduce((sum,e)=>sum+(weights[e.plannedType]||0),0)||1;
+ entries.forEach(e=>{if(e.plannedType==='quality'&&budget*weights.quality/total<(taper<1?24:35))e.plannedType='easy'});
+ total=entries.reduce((sum,e)=>sum+(weights[e.plannedType]||0),0)||1;
+ const nominal=e=>Math.min(budget*(weights[e.plannedType]||0)/total,{recovery:35,easy:70,quality:70,long:race.enabled&&race.distance>=40?150:125,optional:25}[e.plannedType]||0);
+ const spent=entries.reduce((sum,e)=>sum+e.dayRuns.reduce((n,r)=>n+runMinutes(r),0)+(e.resolvedStatus==='done'&&!e.dayRuns.length?(e.state?.minutes??nominal(e)):0),0);
+ const spentLoad=entries.reduce((sum,e)=>sum+e.dayRuns.reduce((n,r)=>n+sessionRpeLoad(r),0)+(e.resolvedStatus==='done'&&!e.dayRuns.length?(e.state?.minutes??nominal(e))*(rpes[e.resolvedType]||3):0),0);
  const remaining=entries.filter(e=>e.index>=entries.todayIndex&&!e.resolvedStatus&&weights[e.plannedType]);
- const total=remaining.reduce((x,e)=>x+weights[e.plannedType],0);
- remaining.forEach(e=>{e.minutes=Math.floor(Math.max(0,entries.budget-spent)*weights[e.plannedType]/(total||1));const sessionCap=Math.max(20,v.budget*weights[e.plannedType]/4.8)*taper;e.minutes=Math.floor(Math.min(e.minutes,sessionCap,{recovery:30,easy:65,quality:65,long:125,optional:25}[e.plannedType]));});
- const spentLoad=entries.reduce((x,e)=>x+e.dayRuns.reduce((y,r)=>y+sessionRpeLoad(r),0)+(e.resolvedStatus==='done'&&!e.dayRuns.length?({quality:250,long:320,easy:120,recovery:50,optional:40}[e.resolvedType]||0):0),0);
- const estimateRpe={recovery:2,easy:3,quality:5,long:4,optional:2};
- const planned=remaining.reduce((x,e)=>x+e.minutes*estimateRpe[e.plannedType],0);
- if(srpeBudget!=null&&planned>0){const scale=Math.min(1,Math.max(0,srpeBudget-spentLoad)/planned);remaining.forEach(e=>e.minutes=Math.floor(e.minutes*scale));}
- entries.projectedLoad=Math.round(spentLoad+remaining.reduce((x,e)=>x+e.minutes*estimateRpe[e.plannedType],0));
- return entries;
+ remaining.forEach(e=>e.minutes=Math.floor(nominal(e)));
+ const proposed=remaining.reduce((n,e)=>n+e.minutes,0),proposedLoad=remaining.reduce((n,e)=>n+e.minutes*rpes[e.plannedType],0);
+ const historic=recentRuns(runs,addDays(v.taperBaseline?localDate(v.taperBaseline):mondayOf(ref),-1),28),valid=historic.filter(r=>r.durationMinutes>0&&r.rpe>0&&!planCycle(localDate(r.date),s).recovery&&weekFacts(runs,mondayOf(localDate(r.date)),s).known);
+ const weeksWithRuns=new Set(valid.map(r=>dateKey(mondayOf(localDate(r.date))))).size;
+ const loadCap=weeksWithRuns>=3&&valid.length>=historic.filter(r=>!planCycle(localDate(r.date),s).recovery).length*.8?valid.reduce((n,r)=>n+sessionRpeLoad(r),0)/weeksWithRuns*1.15*factor:null;
+ const scale=Math.min(1,proposed?Math.max(0,budget-spent)/proposed:1,loadCap!=null&&proposedLoad?Math.max(0,loadCap-spentLoad)/proposedLoad:1);
+ remaining.forEach(e=>e.minutes=Math.floor(e.minutes*scale));
+ entries.budget=budget;entries.volume=v;entries.phase=phase;entries.projectedLoad=Math.round(spentLoad+remaining.reduce((n,e)=>n+e.minutes*rpes[e.plannedType],0));return entries;
 }
 // Structure follows V.O2 training definitions; selection/progression are app policies.
 function qualityWorkout(date,race,runs,volume,zones,totalMinutes){
  const days=race.enabled?diffDaysSigned(date,localDate(race.date)):null;
  const history=recentRuns(runs,date,42).filter(r=>isQuality(r)&&localDate(r.date)<startOfDay(date)).sort((a,b)=>b.date.localeCompare(a.date));
- const good=r=>r.completion==='comfortable'&&r.nextDay==='good'&&r.rpe>0&&r.rpe<=7;
- const stable=volume.observed>=3&&!volume.bad&&volume.gap<7;
- const nearRace=days!=null&&days>7&&days<=42;
- const general=days==null||days>42||days < -7;
+ const good=r=>r.completion!=='stopped'&&r.nextDay!=='poor'&&!(r.pain>=3)&&r.rpe>0&&r.rpe<=7;
+ const comparable=(r,pace)=>r.workKm>0&&r.workMinutes>0&&Math.abs(r.workMinutes*60/r.workKm-pace)/pace<=.05;
+ const stable=volume.observed>=2&&!volume.bad&&volume.gap<7&&!volume.cycle?.recovery;
+ const nearRace=days!=null&&days>7&&days<=(race.distance>=40?70:race.distance>=20?56:42);
+ const general=days==null||days < -7||days>(race.distance>=40?70:race.distance>=20?56:42);
  // General mode alternates only after two successful quality sessions; never adds a quality day.
  const generalInterval=general&&history.length>=2&&history.slice(0,2).every(good)&&history[0].type!=='인터벌';
- const useInterval=stable&&(nearRace&&race.distance<=10||generalInterval)&&taperFactor(days,race.distance)===1;
+ const shortRaceInterval=nearRace&&(race.distance<=5||race.distance<=10&&(volume.cycle?.index??2)===2);
+ const useInterval=stable&&(shortRaceInterval||generalInterval&&(volume.cycle?.index??2)===2)&&taperFactor(days,race.distance)===1;
  const past=recentRuns(runs,addDays(mondayOf(date),-1),28);
- const weeklyKm=past.reduce((sum,r)=>sum+Number(r.distanceKm||0),0)/4;
- const total=Math.floor(totalMinutes),warmup=10,cooldown=10;
- if(total<30||weeklyKm<=0)return null;
+ const weeklyKm=volume.weeklyKm??past.reduce((sum,r)=>sum+Number(r.distanceKm||0),0)/4;
+ const taper=taperFactor(days,race.distance)<1;
+ const total=Math.floor(totalMinutes),warmup=taper?8:10,cooldown=taper?8:10;
+ if(total<(taper?24:30)||weeklyKm<=0)return null;
  if(useInterval){
   // I pace comes from current ability, independently of the race goal.
   const pace=Math.round(zones.interval),rep=3,recovery=2;
   const prior=history.filter(r=>r.type==='인터벌').slice(0,2);
-  const progress=prior.length===2&&prior.every(r=>good(r)&&r.workMinutes>=9);
+  const progress=prior.length===2&&prior.every(r=>good(r)&&r.nextDay==='good'&&r.workMinutes>=9&&comparable(r,pace));
   const targetReps=progress?Math.min(6,Math.floor(Math.min(...prior.map(r=>+r.workMinutes))/rep)+1):3;
   const limitKm=Math.min(10,weeklyKm*.08);
   const reps=Math.min(targetReps,Math.floor(limitKm*pace/60/rep),Math.floor((total-warmup-cooldown+recovery)/(rep+recovery)));
@@ -91,10 +122,10 @@ function qualityWorkout(date,race,runs,volume,zones,totalMinutes){
    return {kind:'interval',paceSeconds:pace,repetitions:reps,repMinutes:rep,recoveryMinutes:recovery,workMinutes:work,workKm:work*60/pace,volumeLimitKm:limitKm,warmupMinutes:warmup,cooldownMinutes:total-warmup-work-rest,totalMinutes:total,progressed:progress};
   }
  }
- const specific=nearRace&&race.distance>10;
- const pace=Math.round(specific?Math.max(race.targetMinutes*60/race.distance,zones.threshold+(race.distance>=40?25:10)):zones.threshold);
+ const specific=nearRace&&race.distance>10&&(race.distance>=40||(volume.cycle?.index??2)%2===0);
+ const pace=Math.round(specific?Math.max(race.targetMinutes*60/race.distance,equivalentMinutes(race.distance,zones.raceVdot||40)*60/race.distance):zones.threshold);
  const prior=history.filter(r=>specific?r.type==='하프페이스':r.type==='템포').slice(0,2);
- const progress=prior.length===2&&prior.every(r=>good(r)&&r.workMinutes>0);
+ const progress=prior.length===2&&prior.every(r=>good(r)&&r.nextDay==='good'&&r.workMinutes>0&&comparable(r,pace));
  const target=progress?Math.min(30,Math.min(...prior.map(r=>+r.workMinutes))+2):18;
  // T work uses a conservative 10% weekly-distance ceiling, also used for race-pace repeats here.
  const limitKm=weeklyKm*.10,work=Math.min(target,qualityWorkCap(days,race.distance),limitKm*pace/60,total-warmup-cooldown-2);
@@ -127,17 +158,17 @@ function coachPlan(date,race,w,wellness,load,trend,type,runs,s,history,week){
  if(load.hardRunWithin48h&&type==='quality')type='easy';
  if(minutes<15)return {...p,title:'이번 주 회복',adjustment:'남은 주간 운동시간이 적어 추가 훈련을 줄였어요.'};
  const easySec=zones?(zones.easyFast+zones.easySlow)/2:370;
- p.trainingType=type==='quality'&&(!zones||minutes<35)?'easy':type;
+ p.trainingType=type==='quality'&&(!zones||minutes<(taperFactor(days,race.distance)<1?24:35))?'easy':type;
  p.heartRate=`${Math.round(s.thresholdHr*.82)}–${Math.round(s.thresholdHr*.90)} bpm · 호흡 우선`;
  p.pace=zones?`${formatPace(zones.easyFast)} ~ ${formatPace(zones.easySlow)}`:'편한 대화 가능 · 페이스 강제 없음';
  p.rpe='2–4/10';p.warmup='처음 5–10분 천천히 (총 시간 포함)';p.cooldown='마지막 5분 천천히 (총 시간 포함)';
  p.adjustment=`${f.value?`현재 VDOT ${f.value.toFixed(1)} · `:''}최근 수행량으로 이번 주 ${week.budget}분 안에서 배분했어요.`;
  if(type==='long'){
   const previous=v.longest, cap=previous?+previous.distanceKm*(v.bad||v.gap>=14? .85:previous.nextDay==='good'&&previous.rpe<=6?1.08:1):6;
-  minutes=Math.min(minutes,cap*easySec/60,v.gap>=14?50:125);
+  minutes=Math.min(minutes,cap*easySec/60,v.gap>=14?50:race.enabled&&race.distance>=40?150:125);
   p.title='이지 롱런';p.note='최근 30일 최장거리와 회복을 기준으로 상한을 정했어요. 20분 전후마다 수분을 확인하고 90분 이상 예정이면 초반부터 탄수화물 보급을 분산하세요. 90분 이상 러닝은 시간당 30–60g 범위에서 익숙한 양을 사용하고 수분은 갈증과 발한량에 맞추세요.';
   p.distance=`총 ${Math.floor(minutes)}분 · 최대 ${Math.floor(Math.min(cap,minutes*60/easySec)*10)/10} km`;
- }else if(type==='quality'&&zones&&minutes>=35){
+ }else if(type==='quality'&&zones&&minutes>=(taperFactor(days,race.distance)<1?24:35)){
   const workout=qualityWorkout(date,race,runs,v,zones,minutes);
   if(workout){
    p.workout=workout;
@@ -151,9 +182,9 @@ function coachPlan(date,race,w,wellness,load,trend,type,runs,s,history,week){
    if(workout.kind==='interval')p.note+=' 첫 반복부터 무리하지 않고 마지막까지 같은 속도로 달리세요.';
    if(workout.progressed)p.note+=' 같은 유형의 최근 2회 수행·회복을 반영했어요.';
   }else{
-   p.trainingType='easy';p.title='이지런';p.distance=`총 ${Math.floor(minutes)}분 · 약 ${(minutes*60/easySec).toFixed(1)} km`;p.note='현재 수행량과 남은 시간에 맞춰 이지런으로 조절했어요.';
+   p.trainingType='easy';p.title='이지런';p.distance=`총 ${Math.floor(minutes)}분`+(zones?` · 약 ${(minutes*60/easySec).toFixed(1)} km`:'');p.note='현재 수행량과 남은 시간에 맞춰 이지런으로 조절했어요.';
   }
- }else{p.title=type==='recovery'?'가벼운 회복':'이지런';p.distance=`총 ${Math.floor(minutes)}분 · 약 ${(minutes*60/easySec).toFixed(1)} km`;p.note='시간을 우선하고 대화 가능한 강도로 달리세요. 힘들면 늦추거나 걷기를 섞어도 좋아요.';}
+ }else{p.title=type==='recovery'?'가벼운 회복':'이지런';p.distance=`총 ${Math.floor(minutes)}분`+(zones?` · 약 ${(minutes*60/easySec).toFixed(1)} km`:'');p.note='시간을 우선하고 대화 가능한 강도로 달리세요. 힘들면 늦추거나 걷기를 섞어도 좋아요.';}
  if(warm){p.pace='더위 반영 · 페이스보다 대화·RPE 우선';p.adjustment+=' 더위로 시간과 강도를 낮췄어요.'}
  if(!w)p.adjustment+=' 예정 시간 날씨 미확인 · 출발 전 확인하세요.';
  if(w&&w.precipitation>0&&w.precipitation<10)p.note+=' 비가 오면 미끄러운 노면을 피하세요.';
@@ -166,34 +197,46 @@ function readTime(prefix){return +$(prefix+'Hours').value*60 + +$(prefix+'Mins')
 function setRecord(prefix,minutes){const seconds=Math.round((+minutes||0)*60);$(prefix+'Min').value=seconds?Math.floor(seconds/60):'';$(prefix+'Sec').value=seconds%60}
 function readRecord(prefix){return $(prefix+'Min').value===''?(+$(prefix+'Sec').value?NaN:null):+$(prefix+'Min').value + +$(prefix+'Sec').value/60}
 function renderFitness(f,week,s){
- $('fitnessSummary').textContent=f.value?`VDOT ${f.value.toFixed(1)} · ${f.source}`:f.source;
- const z=paceSet(f);$('fitnessPaces').textContent=z?`이지 ${formatPace(z.easyFast)} ~ ${formatPace(z.easySlow)} · 역치 ${formatPace(z.threshold)} · 인터벌 ${formatPace(z.interval)}`:'';
- if(!coachSettingsDirty){['manualVdot','thresholdHr'].forEach(id=>$(id).value=s[id]??'');setRecord('record5',s.record5Minutes);setRecord('record10',s.record10Minutes)}
+ $('fitnessSummary').textContent=f.value?`VDOT ${f.value.toFixed(1)}`:'VDOT —';$('vdotSource').textContent=f.source+(f.five&&f.ten?` · 5km ${f.five.toFixed(1)} / 10km ${f.ten.toFixed(1)}`:'');
+ const z=paceSet(f);$('fitnessPaces').innerHTML=z?`<div><span>이지</span><strong>${formatPace(z.easyFast).replace('/km','')}–${formatPace(z.easySlow).replace('/km','')}</strong></div><div><span>역치</span><strong>${formatPace(z.threshold)}</strong></div><div><span>인터벌</span><strong>${formatPace(z.interval)}</strong></div>`:'';
+ if(!coachSettingsDirty){['thresholdHr'].forEach(id=>$(id).value=s[id]??'');setRecord('record5',s.record5Minutes);setRecord('record10',s.record10Minutes)}
  $('trainingHour').value=s.trainingHour;
- $('weekBudget').textContent=`이번 주 ${week.budget}분 이내`;
+ $('weekBudget').textContent=`이번 주 ${week.budget}분 이내 · ${week.phase?.label||'훈련'}`;
+ $('weekReview').value=s.weekReviews?.[dateKey(addDays(mondayOf(new Date()),-7))]||'auto';
+ if(document.activeElement!==$('baselineKm'))$('baselineKm').value=s.baselineKm??'';if(document.activeElement!==$('trainingDays'))$('trainingDays').value=s.trainingDays||3;
+ $('blockPreview').innerHTML=Array.from({length:4},(_,i)=>{const d=addDays(mondayOf(new Date()),i*7),phase=trainingPhase(d,trainingRace(getRaceState(s)),s);return `<div><span>${d.getMonth()+1}/${d.getDate()} 주</span><strong>${phase.label}</strong><small>${phase.focus}</small></div>`}).join('');
  $('todayPainResponse').value=getWellness().painResponse||'unknown';
 }
+function previewVdot(){const f=fitnessState([],{record5Minutes:readRecord('record5'),record10Minutes:readRecord('record10')},new Date());$('fitnessSummary').textContent=f.value?`VDOT ${f.value.toFixed(1)}`:'VDOT —';$('vdotSource').textContent=f.source+' · 저장하면 코칭에 반영'}
 let coachSettingsDirty=false, raceSettingsDirty=false;
 function initCoachUI(){
  Object.assign(TYPE_LABELS,{race:'대회'});
  document.querySelectorAll('select[data-max]').forEach(el=>{el.innerHTML=(el.dataset.blank?'<option value="">미입력</option>':'')+Array.from({length:+el.dataset.max+1},(_,i)=>`<option value="${i}">${i}</option>`).join('')});
  const status=$('coachSaveStatus');
- ['manualVdot','thresholdHr','record5Min','record5Sec','record10Min','record10Sec'].forEach(id=>$(id).addEventListener('input',()=>{coachSettingsDirty=true;status.textContent=''}));
+ ['thresholdHr','record5Min','record5Sec','record10Min','record10Sec'].forEach(id=>$(id).addEventListener('input',()=>{coachSettingsDirty=true;status.textContent='';previewVdot()}));
  $('saveCoachSettings').onclick=()=>{
-  const raw=$('manualVdot').value.trim(), n=Number(raw), hr=Number($('thresholdHr').value), five=readRecord('record5'),ten=readRecord('record10');
+  const hr=Number($('thresholdHr').value), five=readRecord('record5'),ten=readRecord('record10');
   let error='';
-  if(raw&&(!Number.isFinite(n)||n<20||n>85))error='VDOT는 20~85 사이로 입력해 주세요.';
-  else if(!Number.isFinite(hr)||hr<100||hr>220)error='젖산역치 심박은 100~220 사이로 입력해 주세요.';
+  if(!Number.isFinite(hr)||hr<100||hr>220)error='젖산역치 심박은 100~220 사이로 입력해 주세요.';
   else if(five!==null&&!vdotFromResult(5,five)||ten!==null&&!vdotFromResult(10,ten))error='5km·10km 기록의 분과 초를 확인해 주세요.';
   if(error){status.textContent=error;return}
-  try{saveSettings({...loadSettings(),manualVdot:raw?n:null,thresholdHr:hr,record5Minutes:five,record10Minutes:ten});coachSettingsDirty=false;render();status.textContent='저장 완료';}
+  try{saveSettings({...loadSettings(),manualVdot:null,thresholdHr:hr,record5Minutes:five,record10Minutes:ten});coachSettingsDirty=false;render();status.textContent='저장 완료';}
   catch(e){status.textContent='저장하지 못했어요. 저장 공간을 확인해 주세요.';console.error(e)}
  };
  $('trainingHour').onchange=()=>{saveSettings({...loadSettings(),trainingHour:+$('trainingHour').value});render()};
  $('todayPainResponse').onchange=()=>{setWellness(dateKey(new Date()),{...getWellness(),painResponse:$('todayPainResponse').value});render()};
  ['durationHours','durationMins'].forEach(id=>$(id).onchange=()=>{$('durationMinutes').value=readTime('duration');preview()});
+ $('saveTrainingProfile').onclick=()=>{const km=$('baselineKm').value.trim(),days=+$('trainingDays').value;if(![3,4,5].includes(days)||km&&(!Number.isFinite(+km)||+km<0||+km>160)){ $('profileStatus').textContent='주간 거리를 0~160km로 입력해 주세요.';return}try{saveSettings({...loadSettings(),baselineKm:+km>0?+km:null,trainingDays:days});render();$('profileStatus').textContent='저장했어요'}catch(e){$('profileStatus').textContent='저장하지 못했어요.'}};
+ $('weekReview').onchange=()=>{const s=loadSettings(),key=dateKey(addDays(mondayOf(new Date()),-7)),review=$('weekReview').value,facts=weekFacts(loadRuns(),localDate(key),s);if(review==='rest'&&facts.items.length||review==='complete'&&!facts.items.length){$('weekReviewStatus').textContent='실제 기록과 선택이 다릅니다. 미입력은 미확인으로 두세요.';return}try{saveSettings({...s,weekReviews:{...s.weekReviews,[key]:review}});render();$('weekReviewStatus').textContent='반영했어요'}catch(e){$('weekReviewStatus').textContent='저장하지 못했어요.'}};
  $('saveRace').onclick=saveSettingsFromUI;
- $('raceTrainingEnabled').onchange=()=>{const s=loadSettings();if(raceSettingsDirty||!s.raceEnabled){renderSettings(s);return}const enabled=$('raceTrainingEnabled').checked;if(enabled&&!confirm('이 대회에 맞춰 훈련 일정을 조정할까요?')){$('raceTrainingEnabled').checked=false;return}try{saveSettings({...s,raceTrainingEnabled:enabled});render()}catch(e){$('raceTrainingEnabled').checked=Boolean(s.raceTrainingEnabled);$('raceSaveStatus').textContent='저장하지 못했어요.'}};
+ $('editRace').onclick=openRaceEditor;$('addRace').onclick=openRaceEditor;
+ $('closeRaceEditor').onclick=closeRaceEditor;
+ $('raceEditor').addEventListener('cancel',e=>{e.preventDefault();closeRaceEditor()});
+ $('confirmRaceMode').onclick=()=>finishRaceMode(true);$('keepGeneralMode').onclick=()=>finishRaceMode(false);
+ $('raceApplyDialog').addEventListener('cancel',e=>{e.preventDefault();pendingRaceSettings=null;$('raceApplyDialog').close()});
+ $('generalMode').onclick=()=>{const s=loadSettings();if(s.raceEnabled&&s.raceTrainingEnabled)commitRace({...s,raceTrainingEnabled:false})};
+ $('raceMode').onclick=()=>{const s=loadSettings();if(s.raceEnabled&&!s.raceTrainingEnabled){stageRace(s)}};
+ $('removeRace').onclick=()=>{if(confirm('등록한 대회를 삭제할까요?'))commitRace({...loadSettings(),raceEnabled:false,raceTrainingEnabled:false})};
  document.addEventListener('visibilitychange',()=>{if(!document.hidden){render();fetchWeather()}});
 }
 
@@ -205,6 +248,7 @@ const WEEK_STATUS_KEY = "runningCoaching.weekStatus.v1";
 
 const PAIN_AREAS = ["발","발목","아킬레스","정강이","종아리","무릎","허벅지 앞","허벅지 뒤","엉덩이·고관절","허리","기타"];
 const DEFAULT_SETTINGS = {
+  planStart:'',trainingDays:3,baselineKm:null,weekReviews:{},
   raceEnabled: false, raceTrainingEnabled:false, record5Minutes:null, record10Minutes:null,
   raceName: "하프마라톤",
   raceDate: "2026-10-25",
@@ -252,6 +296,7 @@ function validateBackup(obj){
   for(const key of ['settings','wellnessHistory','weekStatus'])if(obj[key]!==undefined&&!validObject(obj[key]))throw Error('백업 설정 형식이 올바르지 않아요.');
   if(obj.settings){const x={...DEFAULT_SETTINGS,...obj.settings};
    if(!Number.isFinite(+x.thresholdHr)||+x.thresholdHr<100||+x.thresholdHr>220||!Number.isInteger(+x.trainingHour)||+x.trainingHour<0||+x.trainingHour>23)throw Error('심박·날씨 시각 설정을 확인해 주세요.');
+   if(![3,4,5].includes(+x.trainingDays)||x.baselineKm!=null&&(!Number.isFinite(+x.baselineKm)||+x.baselineKm<=0||+x.baselineKm>160)||x.planStart&&!Number.isFinite(localDate(x.planStart).getTime())||!validObject(x.weekReviews)||Object.entries(x.weekReviews).some(([d,v])=>!Number.isFinite(localDate(d).getTime())||!['auto','unknown','complete','rest'].includes(v)))throw Error('훈련 시작 기준을 확인해 주세요.');
    if(x.manualVdot!=null&&x.manualVdot!==''&&(!Number.isFinite(+x.manualVdot)||+x.manualVdot<20||+x.manualVdot>85))throw Error('VDOT를 확인해 주세요.');
    if(x.raceEnabled&&(!Number.isFinite(localDate(x.raceDate).getTime())||![5,10,21.0975,42.195].includes(+x.raceDistance)||!Number.isFinite(+x.raceTargetMinutes)||+x.raceTargetMinutes<=0))throw Error('목표 대회 설정을 확인해 주세요.');
    for(const [k,km] of [['record5Minutes',5],['record10Minutes',10]])if(x[k]!=null&&x[k]!==''&&!vdotFromResult(km,+x[k]))throw Error('능력 기록을 확인해 주세요.');
@@ -287,7 +332,7 @@ function saveWeekStatus(s){ localStorage.setItem(WEEK_STATUS_KEY,JSON.stringify(
 function setWeekStatus(day,status,planType){
   const all=loadWeekStatus();
   if(!status) delete all[day];
-  else all[day]={status,planType,updatedAt:new Date().toISOString()};
+  else {const entry=currentWeekSchedule?.find(e=>e.key===day);all[day]={status,planType,minutes:entry?.minutes??null,updatedAt:new Date().toISOString()};}
   saveWeekStatus(all);
 }
 function mondayOf(d){ const x=startOfDay(d), shift=(x.getDay()+6)%7; return addDays(x,-shift); }
@@ -467,11 +512,11 @@ function latestMissed(entries,startIdx,type){
   }
   return null;
 }
-function buildAdaptiveWeek(ref,runs,weekStatus,intensityStats){
+function buildAdaptiveWeek(ref,runs,weekStatus,intensityStats,settings=loadSettings()){
   const today=startOfDay(ref), weekStart=mondayOf(today), todayIdx=Math.max(0,Math.min(6,diffDaysSigned(weekStart,today)));
   const entries=Array.from({length:7},(_,i)=>{
     const date=addDays(weekStart,i), key=dateKey(date), dayRuns=runsForDay(runs,key), state=weekStatus[key]||null;
-    const actualType=categoryFromRuns(dayRuns), baseType=BASE_WEEK_TYPES[i];
+    const actualType=categoryFromRuns(dayRuns), baseType=(+settings.trainingDays===5?BASE_WEEK_TYPES:+settings.trainingDays===4?['rest','easy','rest','quality','rest','long','recovery']:['rest','easy','rest','quality','rest','long','rest'])[i];
     const resolvedStatus=actualType?"done":(state?.status||null);
     const resolvedType=actualType || (state?.planType||baseType);
     return {index:i,date,key,baseType,plannedType:baseType,actualType,state,resolvedStatus,resolvedType,dayRuns};
@@ -625,18 +670,11 @@ function renderTargetCard(race,now){
   const d=diffDaysSigned(now,localDate(race.date));
   if(d<0){card.hidden=true;return}
   card.hidden=false; $("targetName").textContent=race.name;
-  const estimate=goalEstimate(race,fitnessState([],loadSettings(),now));
-  $('goalProbability').textContent=estimate==null?'목표 달성 가능성 · 능력 입력 필요':`목표 달성 가능성 ${estimate}% · 모형 추정`;
+  const f=fitnessState([],loadSettings(),now),ability=f.value?Math.min(f.value,f.ten||f.value,f.five||f.value):null,estimate=equivalentMinutes(race.distance,ability);
+  $('goalProbability').textContent=estimate==null?'운동 능력을 입력하면 환산기록을 볼 수 있어요.':`현재 능력 환산 ${formatMinutes(estimate)} · 목표보다 ${Math.abs(Math.round(estimate-race.targetMinutes))}분 ${estimate<=race.targetMinutes?'빠름':'느림'}`;
   const pace=race.distance>0&&race.targetMinutes>0?paceFromMinutes(race.distance,race.targetMinutes):"-";
   $("targetDetail").textContent=`${race.date} · 목표 ${formatMinutes(race.targetMinutes)} · ${pace}`;
   $("targetDday").textContent=d===0?"D-DAY":`D-${d}`;
-}
-function goalEstimate(race,f){
- if(!f.value||!(race.targetMinutes>0))return null;
- const required=vdotFromResult(race.distance,race.targetMinutes);if(!required)return null;
- // Uncalibrated scenario score, not an empirically validated success probability.
- const ability=Math.min(f.value,f.ten||f.value,f.five||f.value);
- return Math.max(5,Math.min(95,Math.round(100/(1+Math.exp((required-ability)/2.5))/5)*5));
 }
 function formatMinutes(min){
   const n=Number(min); if(!n) return "-"; const rounded=Math.round(n),h=Math.floor(rounded/60),m=rounded%60; return h?`${h}:${pad(m)}`:`${m}분`;
@@ -801,19 +839,29 @@ function renderHourlyWeather(){
   requestAnimationFrame(()=>{const idx=weatherHourly.findIndex(v=>Number(v.time.slice(11,13))===nowHour); if(idx>0) box.scrollLeft=Math.max(0,idx*87-10)});
 }
 
+let pendingRaceSettings=null;
 function renderSettings(s){
- if(!raceSettingsDirty){
- $('raceEnabled').checked=Boolean(s.raceEnabled);$('raceName').value=s.raceName||'';$('raceDate').value=s.raceDate||'';$('raceDistance').value=s.raceDistance;fillTime('raceTarget',s.raceTargetMinutes);
- }
- $('raceFields').hidden=!$('raceEnabled').checked;
- $('raceTrainingEnabled').checked=Boolean(s.raceEnabled&&s.raceTrainingEnabled);$('raceModeControl').hidden=!s.raceEnabled;$('raceTrainingEnabled').disabled=raceSettingsDirty;
- $('raceTargetPace').textContent=paceFromMinutes(+$('raceDistance').value,readTime('raceTarget'));
+ const enabled=Boolean(s.raceEnabled),mode=enabled&&Boolean(s.raceTrainingEnabled);
+ $('raceEmpty').hidden=enabled;$('raceSummary').hidden=!enabled;$('editRace').hidden=!enabled;
+ $('raceSummaryName').textContent=s.raceName||'목표 대회';
+ $('raceSummaryDate').textContent=`${s.raceDate||''} · ${raceDistanceLabel(s.raceDistance)}`;
+ $('raceSummaryTime').textContent=formatMinutes(s.raceTargetMinutes);$('raceSummaryPace').textContent=paceFromMinutes(s.raceDistance,s.raceTargetMinutes);
+ for(const [id,on]of [['generalMode',!mode],['raceMode',mode]]){$(id).classList.toggle('selected',on);$(id).setAttribute('aria-pressed',String(on))}
+ if(!raceSettingsDirty&&!$('raceEditor').open)fillRaceEditor(s);
 }
+function raceDistanceLabel(km){return ({5:'5km',10:'10km',21.0975:'하프',42.195:'풀'})[Number(km)]||`${km}km`}
+function fillRaceEditor(s){$('raceName').value=s.raceEnabled?s.raceName||'':'';$('raceDate').value=s.raceEnabled?s.raceDate||'':'';$('raceDistance').value=s.raceDistance||21.0975;fillTime('raceTarget',s.raceTargetMinutes||110);updateRacePreview()}
+function updateRacePreview(){$('raceTargetPace').textContent=paceFromMinutes(+$('raceDistance').value,readTime('raceTarget'))}
+function openRaceEditor(){raceSettingsDirty=false;fillRaceEditor(loadSettings());$('raceEditorStatus').textContent='';$('removeRace').hidden=!loadSettings().raceEnabled;$('raceEditor').showModal()}
+function closeRaceEditor(){if(raceSettingsDirty&&!confirm('저장하지 않은 변경을 닫을까요?'))return;raceSettingsDirty=false;$('raceEditor').close()}
+function commitRace(s){try{saveSettings(s)}catch(e){$('raceEditorStatus').textContent='저장하지 못했어요. 입력 내용은 유지됩니다.';$('raceSaveStatus').textContent='저장하지 못했어요.';$('raceApplyStatus').textContent='저장하지 못했어요. 다시 시도해 주세요.';return false}raceSettingsDirty=false;$('raceEditor').close();render();$('raceSaveStatus').textContent='저장했어요';return true}
+function stageRace(s){pendingRaceSettings=s;$('raceApplyStatus').textContent='';$('raceApplyDialog').showModal()}
+function finishRaceMode(enabled){if(!pendingRaceSettings)return;const next={...pendingRaceSettings,raceTrainingEnabled:enabled};if(commitRace(next)){pendingRaceSettings=null;$('raceApplyDialog').close()}}
 function saveSettingsFromUI(){
- const s={...loadSettings(),raceEnabled:$('raceEnabled').checked,raceName:$('raceName').value.trim()||'목표 대회',raceDate:$('raceDate').value,raceDistance:+$('raceDistance').value,raceTargetMinutes:readTime('raceTarget')};
- if(s.raceEnabled&&(!s.raceDate||!Number.isFinite(localDate(s.raceDate).getTime())||!Number.isFinite(s.raceTargetMinutes)||s.raceTargetMinutes<=0||![5,10,21.0975,42.195].includes(s.raceDistance))){ $('raceSaveStatus').textContent='대회일과 목표 기록을 확인해 주세요.';return}
- s.raceTrainingEnabled=s.raceEnabled&&confirm('이 대회에 맞춰 훈련 일정을 조정할까요?');
- try{saveSettings(s);raceSettingsDirty=false;render();$('raceSaveStatus').textContent=s.raceTrainingEnabled?'저장 완료 · 대회 모드':'저장 완료 · 일반 모드'}catch(e){$('raceSaveStatus').textContent='저장하지 못했어요.'}
+ const old=loadSettings(),s={...old,raceEnabled:true,raceName:$('raceName').value.trim()||'목표 대회',raceDate:$('raceDate').value,raceDistance:+$('raceDistance').value,raceTargetMinutes:readTime('raceTarget')};
+ if(!Number.isFinite(localDate(s.raceDate).getTime())||!(s.raceTargetMinutes>0)||![5,10,21.0975,42.195].includes(s.raceDistance)){$('raceEditorStatus').textContent='대회일과 목표 기록을 확인해 주세요.';return}
+ const changed=!old.raceEnabled||['raceDate','raceDistance','raceTargetMinutes'].some(k=>old[k]!==s[k]);
+ if(changed){stageRace(s)}else commitRace(s);
 }
 
 function syncPanelHeight(){
@@ -834,7 +882,7 @@ function setSwipeVisual(index,dragPx=0,animate=true){
 function switchTab(tabId){
   const idx=TAB_ORDER.indexOf(tabId); if(idx<0)return; activeTabIndex=idx;
   document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.tab===tabId));
-  document.querySelectorAll(".panel").forEach(x=>x.classList.toggle("active",x.id===tabId));
+  document.querySelectorAll(".panel").forEach(x=>{x.classList.toggle("active",x.id===tabId);x.inert=x.id!==tabId});
   setSwipeVisual(activeTabIndex,0,true); requestAnimationFrame(syncPanelHeight);
 }
 function installSwipeTabs(){
@@ -885,6 +933,7 @@ function buildRunFromForm(){
 function saveRunFromForm(){ const r=buildRunFromForm();if(!r)return false;let runs=loadRuns(),id=$("editingRunId").value;if(id)runs=runs.map(x=>x.id===id?r:x);else runs.push(r);try{saveRuns(runs)}catch(e){alert('기록을 저장하지 못했어요. 입력 내용은 유지됩니다.');return false}render();return true; }
 function requestCloseRun(){ if(!runFormHasContent()){$("addDialog").close();return} $("discardDialog").showModal(); }
 function init(){
+  const initial=loadSettings();if(!initial.planStart){try{saveSettings({...initial,planStart:dateKey(mondayOf(new Date()))})}catch(e){console.error('Initial settings could not be saved')}}
   initCoachUI();
   $('runForm').onsubmit=e=>{e.preventDefault();if(saveRunFromForm())$('addDialog').close()};
   if(typeof ResizeObserver!=='undefined'){const observer=new ResizeObserver(syncPanelHeight);document.querySelectorAll('.panel').forEach(panel=>observer.observe(panel))}
@@ -907,7 +956,7 @@ function init(){
   $("saveAndClose").onclick=()=>{if(saveRunFromForm()){$("discardDialog").close();$("addDialog").close()}};
   $("discardAndClose").onclick=()=>{$("discardDialog").close();$("addDialog").close()}; $("keepEditing").onclick=()=>$("discardDialog").close();
   $("closeAnalysis").onclick=()=>$("analysisDialog").close(); $("analysisCloseBtn").onclick=()=>$("analysisDialog").close(); $("analysisEdit").onclick=()=>{const id=selectedAnalysisRunId;$("analysisDialog").close();openEditRun(id)};
-  ['raceEnabled','raceName','raceDate','raceDistance','raceTargetHours','raceTargetMins'].forEach(id=>$(id).oninput=()=>{raceSettingsDirty=true;renderSettings(loadSettings());syncPanelHeight()});
+  ['raceName','raceDate','raceDistance','raceTargetHours','raceTargetMins'].forEach(id=>$(id).oninput=()=>{raceSettingsDirty=true;updateRacePreview();$('raceEditorStatus').textContent=''});
   $("exportBtn").onclick=()=>{const blob=new Blob([JSON.stringify({version:7,exportedAt:new Date().toISOString(),runs:loadRuns(),wellnessHistory:loadWellnessHistory(),settings:loadSettings(),weekStatus:loadWeekStatus()},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`running-coaching-backup-${dateKey(new Date())}.json`;a.click();URL.revokeObjectURL(a.href)};
   $('importInput').onchange=async e=>{const file=e.target.files?.[0];if(!file)return;try{const obj=JSON.parse(await file.text()),runs=validateBackup(obj);if(confirm(`훈련 기록 ${runs.length}개와 포함된 설정/상태/주간 체크 데이터로 현재 데이터를 교체할까?`)){restoreBackup(obj);render()}}catch(error){alert(error.message||'올바른 러닝 코칭 백업 JSON 파일이 아니에요.')}e.target.value=''};
   if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}))} render();fetchWeather();
